@@ -209,50 +209,141 @@ def calculate_scorecard_valuation(valuation_data):
 
 # Function to extract valuation parameters from AI analysis
 def extract_valuation_params(analysis_text):
+    """Extract valuation parameters from the AI analysis text.
+    
+    This function parses the VALUATION CRITERIA SCORES section in the analysis 
+    to extract numerical values for checklist scores and scorecard multipliers.
+    """
     # Default values if extraction fails
     valuation_data = st.session_state.valuation_data.copy()
     
     try:
-        # Simple heuristic to extract values from the AI analysis
-        # In a real-world scenario, you'd want a more robust solution
-
-        # Checklist extraction
-        if "founders" in analysis_text.lower() and "team" in analysis_text.lower():
-            score = 0.75  # Default
-            # Try to extract a percentage
-            if "founders & team" in analysis_text.lower():
-                content_after = analysis_text.lower().split("founders & team")[1].split("\n")[0]
-                if "%" in content_after:
+        # First check if we have the structured VALUATION CRITERIA SCORES section
+        if "VALUATION CRITERIA SCORES:" in analysis_text:
+            valuation_section = analysis_text.split("VALUATION CRITERIA SCORES:")[1].split("\n\n")[0]
+            
+            # Extract Checklist Method Scores
+            if "CHECKLIST METHOD SCORES:" in valuation_section:
+                checklist_section = valuation_section.split("CHECKLIST METHOD SCORES:")[1]
+                if "SCORECARD METHOD MULTIPLIERS:" in checklist_section:
+                    checklist_section = checklist_section.split("SCORECARD METHOD MULTIPLIERS:")[0]
+                
+                # Extract individual scores
+                # Founders & Team
+                if "Founders & Team:" in checklist_section:
+                    match = re.search(r"Founders & Team:\s*(\d+)%", checklist_section)
+                    if match:
+                        score = float(match.group(1)) / 100
+                        valuation_data["checklist"]["founders_team"]["score"] = score
+                
+                # Idea
+                if "Idea:" in checklist_section:
+                    match = re.search(r"Idea:\s*(\d+)%", checklist_section)
+                    if match:
+                        score = float(match.group(1)) / 100
+                        valuation_data["checklist"]["idea"]["score"] = score
+                
+                # Market Size
+                if "Market Size:" in checklist_section:
+                    match = re.search(r"Market Size:\s*(\d+)%", checklist_section)
+                    if match:
+                        score = float(match.group(1)) / 100
+                        valuation_data["checklist"]["market"]["score"] = score
+                
+                # Product & IP
+                if "Product & IP:" in checklist_section:
+                    match = re.search(r"Product & IP:\s*(\d+)%", checklist_section)
+                    if match:
+                        score = float(match.group(1)) / 100
+                        valuation_data["checklist"]["product_ip"]["score"] = score
+                
+                # Execution Potential
+                if "Execution Potential:" in checklist_section:
+                    match = re.search(r"Execution Potential:\s*(\d+)%", checklist_section)
+                    if match:
+                        score = float(match.group(1)) / 100
+                        valuation_data["checklist"]["execution"]["score"] = score
+            
+            # Extract Scorecard Method Multipliers
+            if "SCORECARD METHOD MULTIPLIERS:" in valuation_section:
+                scorecard_section = valuation_section.split("SCORECARD METHOD MULTIPLIERS:")[1]
+                
+                # Team Strength
+                if "Team Strength:" in scorecard_section:
+                    match = re.search(r"Team Strength:\s*([\d\.]+)x", scorecard_section)
+                    if match:
+                        multiplier = float(match.group(1))
+                        valuation_data["scorecard"]["team_strength"]["multiplier"] = multiplier
+                
+                # Opportunity Size
+                if "Opportunity Size:" in scorecard_section:
+                    match = re.search(r"Opportunity Size:\s*([\d\.]+)x", scorecard_section)
+                    if match:
+                        multiplier = float(match.group(1))
+                        valuation_data["scorecard"]["opportunity_size"]["multiplier"] = multiplier
+                
+                # Product/Service
+                if "Product/Service:" in scorecard_section:
+                    match = re.search(r"Product/Service:\s*([\d\.]+)x", scorecard_section)
+                    if match:
+                        multiplier = float(match.group(1))
+                        valuation_data["scorecard"]["product_service"]["multiplier"] = multiplier
+                
+                # Competition
+                if "Competition:" in scorecard_section:
+                    match = re.search(r"Competition:\s*([\d\.]+)x", scorecard_section)
+                    if match:
+                        multiplier = float(match.group(1))
+                        valuation_data["scorecard"]["competition"]["multiplier"] = multiplier
+                
+                # Marketing & Sales
+                if "Marketing & Sales:" in scorecard_section:
+                    match = re.search(r"Marketing & Sales:\s*([\d\.]+)x", scorecard_section)
+                    if match:
+                        multiplier = float(match.group(1))
+                        valuation_data["scorecard"]["marketing_sales"]["multiplier"] = multiplier
+                
+                # Need for Funding
+                if "Need for Funding:" in scorecard_section:
+                    match = re.search(r"Need for Funding:\s*([\d\.]+)x", scorecard_section)
+                    if match:
+                        multiplier = float(match.group(1))
+                        valuation_data["scorecard"]["need_funding"]["multiplier"] = multiplier
+        
+        # Fallback to less structured extraction if the section isn't found
+        else:
+            # Checklist extraction
+            if "founders" in analysis_text.lower() and "team" in analysis_text.lower():
+                score = 0.75  # Default
+                # Try to extract a percentage
+                if "founders & team" in analysis_text.lower():
+                    content_after = analysis_text.lower().split("founders & team")[1].split("\n")[0]
+                    if "%" in content_after:
+                        try:
+                            percentage = float(content_after.split("%")[0].strip().split(" ")[-1]) / 100
+                            if 0 <= percentage <= 1:
+                                score = percentage
+                        except:
+                            pass
+                valuation_data["checklist"]["founders_team"]["score"] = score
+            
+            # Scorecard extraction
+            if "team strength" in analysis_text.lower():
+                content_after = analysis_text.lower().split("team strength")[1].split("\n")[0]
+                if "premium" in content_after or "discount" in content_after:
+                    multiplier = 1.4  # Default
                     try:
-                        percentage = float(content_after.split("%")[0].strip().split(" ")[-1]) / 100
-                        if 0 <= percentage <= 1:
-                            score = percentage
+                        # Try to extract multiplier value
+                        for word in ["premium", "discount", "multiplier", "factor"]:
+                            if word in content_after:
+                                number_part = content_after.split(word)[1].strip().split(" ")[0]
+                                if number_part.startswith("of"):
+                                    number_part = number_part[2:]
+                                multiplier = float(number_part.replace("x", ""))
+                                break
+                        valuation_data["scorecard"]["team_strength"]["multiplier"] = multiplier
                     except:
                         pass
-            valuation_data["checklist"]["founders_team"]["score"] = score
-        
-        # Similar extraction could be done for other parameters
-        # This is a simplified version - you'd want more robust extraction logic
-        
-        # Scorecard extraction
-        if "team strength" in analysis_text.lower():
-            content_after = analysis_text.lower().split("team strength")[1].split("\n")[0]
-            if "premium" in content_after or "discount" in content_after:
-                multiplier = 1.4  # Default
-                try:
-                    # Try to extract multiplier value
-                    for word in ["premium", "discount", "multiplier", "factor"]:
-                        if word in content_after:
-                            number_part = content_after.split(word)[1].strip().split(" ")[0]
-                            if number_part.startswith("of"):
-                                number_part = number_part[2:]
-                            multiplier = float(number_part.replace("x", ""))
-                            break
-                    valuation_data["scorecard"]["team_strength"]["multiplier"] = multiplier
-                except:
-                    pass
-
-        # You'd continue with similar extraction for other parameters
         
     except Exception as e:
         st.warning(f"Error extracting valuation parameters: {e}")
@@ -268,29 +359,54 @@ def request_valuation_parameters():
         return st.session_state.valuation_data
     
     try:
-        # Create a specific message asking for valuation parameters
-        valuation_prompt = """
-        Based on the startup documents analyzed earlier, I need detailed valuation parameters for both methods:
-
-        1. CHECKLIST METHOD:
-        Provide specific percentage scores (0-100%) for each of these areas:
-        - Founders & Team (30% weight): [SCORE]%
-        - Idea (20% weight): [SCORE]%
-        - Market Size (20% weight): [SCORE]%
-        - Product & IP (15% weight): [SCORE]%
-        - Execution Potential (15% weight): [SCORE]%
-
-        2. SCORECARD METHOD:
-        Provide specific premium/discount multipliers for each area:
-        - Team Strength (24% weight): [MULTIPLIER]x
-        - Opportunity Size (22% weight): [MULTIPLIER]x
-        - Product/Service (20% weight): [MULTIPLIER]x
-        - Competition (16% weight): [MULTIPLIER]x
-        - Marketing & Sales (12% weight): [MULTIPLIER]x
-        - Need for Funding (6% weight): [MULTIPLIER]x
-
-        Please respond in a structured format with ONLY these values and brief justifications.
-        Use this exact format to make it easy to parse:
+        # Get the current values from the extracted data
+        current_data = st.session_state.valuation_data
+        
+        # Format the current values to include in the prompt
+        checklist_values = {
+            "founders_team": f"{current_data['checklist']['founders_team']['score'] * 100:.0f}",
+            "idea": f"{current_data['checklist']['idea']['score'] * 100:.0f}",
+            "market": f"{current_data['checklist']['market']['score'] * 100:.0f}",
+            "product_ip": f"{current_data['checklist']['product_ip']['score'] * 100:.0f}",
+            "execution": f"{current_data['checklist']['execution']['score'] * 100:.0f}"
+        }
+        
+        scorecard_values = {
+            "team_strength": f"{current_data['scorecard']['team_strength']['multiplier']:.1f}",
+            "opportunity_size": f"{current_data['scorecard']['opportunity_size']['multiplier']:.1f}",
+            "product_service": f"{current_data['scorecard']['product_service']['multiplier']:.1f}",
+            "competition": f"{current_data['scorecard']['competition']['multiplier']:.1f}",
+            "marketing_sales": f"{current_data['scorecard']['marketing_sales']['multiplier']:.1f}",
+            "need_funding": f"{current_data['scorecard']['need_funding']['multiplier']:.1f}"
+        }
+        
+        # Create a specific message asking for valuation parameters with current values
+        valuation_prompt = f"""
+        Based on the startup documents analyzed earlier, I need final valuation parameters for both methods.
+        
+        From your initial analysis, I've extracted these preliminary values:
+        
+        CHECKLIST METHOD:
+        - Founders & Team (30% weight): {checklist_values['founders_team']}%
+        - Idea (20% weight): {checklist_values['idea']}%
+        - Market Size (20% weight): {checklist_values['market']}%
+        - Product & IP (15% weight): {checklist_values['product_ip']}%
+        - Execution Potential (15% weight): {checklist_values['execution']}%
+        
+        SCORECARD METHOD:
+        - Team Strength (24% weight): {scorecard_values['team_strength']}x
+        - Opportunity Size (22% weight): {scorecard_values['opportunity_size']}x
+        - Product/Service (20% weight): {scorecard_values['product_service']}x
+        - Competition (16% weight): {scorecard_values['competition']}x
+        - Marketing & Sales (12% weight): {scorecard_values['marketing_sales']}x
+        - Need for Funding (6% weight): {scorecard_values['need_funding']}x
+        
+        Please review the startup documents again and provide final valuation parameters. These should reflect the startup's actual potential based on the pitchdeck quality.
+        
+        If the pitchdeck is strong, scores and multipliers should be higher.
+        If the pitchdeck is weak or missing critical information, scores and multipliers should be lower.
+        
+        Return your response with justifications in this exact format:
 
         CHECKLIST METHOD:
         Founders & Team: [SCORE]%
@@ -486,6 +602,14 @@ def start_new_evaluation():
         st.session_state.current_view = "upload"
         st.session_state.ai_analysis = None
         
+        # Clear valuation response
+        if 'valuation_response' in st.session_state:
+            del st.session_state.valuation_response
+            
+        # Clear AI predicted values
+        if 'ai_predicted_values' in st.session_state:
+            del st.session_state.ai_predicted_values
+        
         # Reset valuation data to defaults
         st.session_state.valuation_data = {
             # Checklist method
@@ -646,7 +770,7 @@ if st.session_state.current_view == "upload":
                         "tools": [{"type": "code_interpreter"}]
                     })
                 
-                # Create a message with all attachments - focus on just the report
+                # Create a message with all attachments - focus on report with valuation criteria scores
                 message_text = f"""I've uploaded {len(file_ids)} files for analysis: {', '.join(file_names)}. 
                 Please analyze all files together for a comprehensive evaluation of this startup.
 
@@ -659,9 +783,26 @@ if st.session_state.current_view == "upload":
                 5. Competitive analysis (with names or descriptions of similar startups)
                 6. Overall score (1-10)
                 7. Final recommendation
+                8. Valuation Criteria Scores (REQUIRED - use this exact format):
 
-                Do not include valuation details yet - I will ask for a detailed valuation assessment separately.
-                Focus on providing a comprehensive analysis of the startup first.
+                VALUATION CRITERIA SCORES:
+                
+                CHECKLIST METHOD SCORES:
+                - Founders & Team: [SCORE]% (e.g. 75%)
+                - Idea: [SCORE]% (e.g. 65%)
+                - Market Size: [SCORE]% (e.g. 80%)
+                - Product & IP: [SCORE]% (e.g. 70%)
+                - Execution Potential: [SCORE]% (e.g. 60%)
+                
+                SCORECARD METHOD MULTIPLIERS:
+                - Team Strength: [MULTIPLIER]x (e.g. 1.2x)
+                - Opportunity Size: [MULTIPLIER]x (e.g. 1.5x)
+                - Product/Service: [MULTIPLIER]x (e.g. 0.9x)
+                - Competition: [MULTIPLIER]x (e.g. 1.1x)
+                - Marketing & Sales: [MULTIPLIER]x (e.g. 0.8x)
+                - Need for Funding: [MULTIPLIER]x (e.g. 1.0x)
+                
+                Replace the examples with your actual assessments based on the pitchdeck. The valuation criteria scores must be included in your response with this exact format.
                 """
                 
                 # Create message with all attachments
@@ -772,10 +913,35 @@ elif st.session_state.current_view == "valuation":
         st.session_state.current_view = "upload"
         st.rerun()
     
+    # Display valuation overview
+    st.markdown("""
+    ## Valuation Overview
+    
+    This section provides two different methods to calculate the valuation of the startup:
+    
+    1. **Checklist Method**: Evaluates specific areas with percentage scores against a perfect valuation
+    2. **Scorecard Method**: Applies premium/discount multipliers to a median industry valuation
+    
+    The sliders are pre-set with AI-predicted values based on the pitchdeck quality, but you can adjust them.
+    """)
+    
     # Display valuation parameters justification if available
     if 'valuation_response' in st.session_state:
-        with st.expander("AI Valuation Justifications", expanded=False):
+        with st.expander("AI Valuation Justifications", expanded=True):
             st.markdown(st.session_state.valuation_response)
+            
+    # Show alert if no AI-specific valuation was requested
+    elif 'ai_analysis' in st.session_state:
+        st.info("ℹ️ Using values extracted from the initial analysis. For more specific valuation parameters, return to the report and click 'Get Valuation Parameters'.")
+    
+    # Store a copy of the original AI predictions if not already stored
+    if 'ai_predicted_values' not in st.session_state:
+        st.session_state.ai_predicted_values = st.session_state.valuation_data.copy()
+    
+    # Add a reset button to restore AI predictions
+    if st.button("Reset to AI-Predicted Values"):
+        st.session_state.valuation_data = st.session_state.ai_predicted_values.copy()
+        st.rerun()
     
     # Create tabs for the two valuation methods
     tab1, tab2 = st.tabs(["Checklist Method", "Scorecard Method"])
@@ -800,6 +966,11 @@ elif st.session_state.current_view == "valuation":
         
         # Sliders for each factor
         st.subheader("Founders & Team (30%)")
+        # Show the AI-predicted value first
+        ai_founders_score = st.session_state.ai_predicted_values["checklist"]["founders_team"]["score"]
+        st.caption(f"AI-predicted value: {ai_founders_score:.0%}")
+        
+        # Then show the slider for adjustment
         founders_score = st.slider(
             "Score",
             min_value=0.0,
@@ -812,6 +983,10 @@ elif st.session_state.current_view == "valuation":
         st.session_state.valuation_data["checklist"]["founders_team"]["score"] = founders_score
         
         st.subheader("Idea (20%)")
+        # Show AI-predicted value
+        ai_idea_score = st.session_state.ai_predicted_values["checklist"]["idea"]["score"]
+        st.caption(f"AI-predicted value: {ai_idea_score:.0%}")
+        
         idea_score = st.slider(
             "Score",
             min_value=0.0,
@@ -824,6 +999,10 @@ elif st.session_state.current_view == "valuation":
         st.session_state.valuation_data["checklist"]["idea"]["score"] = idea_score
         
         st.subheader("Market Size (20%)")
+        # Show AI-predicted value
+        ai_market_score = st.session_state.ai_predicted_values["checklist"]["market"]["score"]
+        st.caption(f"AI-predicted value: {ai_market_score:.0%}")
+        
         market_score = st.slider(
             "Score",
             min_value=0.0,
@@ -836,6 +1015,10 @@ elif st.session_state.current_view == "valuation":
         st.session_state.valuation_data["checklist"]["market"]["score"] = market_score
         
         st.subheader("Product and IP (15%)")
+        # Show AI-predicted value
+        ai_product_score = st.session_state.ai_predicted_values["checklist"]["product_ip"]["score"]
+        st.caption(f"AI-predicted value: {ai_product_score:.0%}")
+        
         product_score = st.slider(
             "Score",
             min_value=0.0,
@@ -848,6 +1031,10 @@ elif st.session_state.current_view == "valuation":
         st.session_state.valuation_data["checklist"]["product_ip"]["score"] = product_score
         
         st.subheader("Execution (15%)")
+        # Show AI-predicted value
+        ai_execution_score = st.session_state.ai_predicted_values["checklist"]["execution"]["score"]
+        st.caption(f"AI-predicted value: {ai_execution_score:.0%}")
+        
         execution_score = st.slider(
             "Score",
             min_value=0.0,
@@ -906,6 +1093,10 @@ elif st.session_state.current_view == "valuation":
         
         # Sliders for each factor multiplier
         st.subheader("Team Strength (24%)")
+        # Show AI-predicted value
+        ai_team_multiplier = st.session_state.ai_predicted_values["scorecard"]["team_strength"]["multiplier"]
+        st.caption(f"AI-predicted value: {ai_team_multiplier:.1f}x")
+        
         team_multiplier = st.slider(
             "Premium/Discount",
             min_value=0.1,
@@ -918,6 +1109,10 @@ elif st.session_state.current_view == "valuation":
         st.session_state.valuation_data["scorecard"]["team_strength"]["multiplier"] = team_multiplier
         
         st.subheader("Opportunity Size (22%)")
+        # Show AI-predicted value
+        ai_opportunity_multiplier = st.session_state.ai_predicted_values["scorecard"]["opportunity_size"]["multiplier"]
+        st.caption(f"AI-predicted value: {ai_opportunity_multiplier:.1f}x")
+        
         opportunity_multiplier = st.slider(
             "Premium/Discount",
             min_value=0.1,
@@ -930,6 +1125,10 @@ elif st.session_state.current_view == "valuation":
         st.session_state.valuation_data["scorecard"]["opportunity_size"]["multiplier"] = opportunity_multiplier
         
         st.subheader("Product/Service (20%)")
+        # Show AI-predicted value
+        ai_product_multiplier = st.session_state.ai_predicted_values["scorecard"]["product_service"]["multiplier"]
+        st.caption(f"AI-predicted value: {ai_product_multiplier:.1f}x")
+        
         product_multiplier = st.slider(
             "Premium/Discount",
             min_value=0.1,
@@ -942,6 +1141,10 @@ elif st.session_state.current_view == "valuation":
         st.session_state.valuation_data["scorecard"]["product_service"]["multiplier"] = product_multiplier
         
         st.subheader("Competition (16%)")
+        # Show AI-predicted value
+        ai_competition_multiplier = st.session_state.ai_predicted_values["scorecard"]["competition"]["multiplier"]
+        st.caption(f"AI-predicted value: {ai_competition_multiplier:.1f}x")
+        
         competition_multiplier = st.slider(
             "Premium/Discount",
             min_value=0.1,
@@ -954,6 +1157,10 @@ elif st.session_state.current_view == "valuation":
         st.session_state.valuation_data["scorecard"]["competition"]["multiplier"] = competition_multiplier
         
         st.subheader("Marketing & Sales (12%)")
+        # Show AI-predicted value
+        ai_marketing_multiplier = st.session_state.ai_predicted_values["scorecard"]["marketing_sales"]["multiplier"]
+        st.caption(f"AI-predicted value: {ai_marketing_multiplier:.1f}x")
+        
         marketing_multiplier = st.slider(
             "Premium/Discount",
             min_value=0.1,
@@ -966,6 +1173,10 @@ elif st.session_state.current_view == "valuation":
         st.session_state.valuation_data["scorecard"]["marketing_sales"]["multiplier"] = marketing_multiplier
         
         st.subheader("Need for Funding (6%)")
+        # Show AI-predicted value
+        ai_funding_multiplier = st.session_state.ai_predicted_values["scorecard"]["need_funding"]["multiplier"]
+        st.caption(f"AI-predicted value: {ai_funding_multiplier:.1f}x")
+        
         funding_multiplier = st.slider(
             "Premium/Discount",
             min_value=0.1,
@@ -1022,21 +1233,45 @@ elif st.session_state.current_view == "valuation":
     # Comparison of both methods
     st.header("Valuation Comparison")
     
-    # Calculate both valuations
+    # Calculate both valuations based on user adjustments
     checklist_val = calculate_checklist_valuation(st.session_state.valuation_data)
     scorecard_val = calculate_scorecard_valuation(st.session_state.valuation_data)
     
-    # Create and display a bar chart
+    # Calculate valuations based on AI predictions
+    ai_checklist_val = calculate_checklist_valuation(st.session_state.ai_predicted_values)
+    ai_scorecard_val = calculate_scorecard_valuation(st.session_state.ai_predicted_values)
+    
+    # Create and display comparison metrics
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("AI-Predicted Valuations")
+        st.metric("Checklist Method", f"${ai_checklist_val['total']:,.0f}")
+        st.metric("Scorecard Method", f"${ai_scorecard_val['total']:,.0f}")
+        ai_average_val = (ai_checklist_val['total'] + ai_scorecard_val['total']) / 2
+        st.metric("Average", f"${ai_average_val:,.0f}")
+    
+    with col2:
+        st.subheader("Your Adjusted Valuations")
+        st.metric("Checklist Method", f"${checklist_val['total']:,.0f}", 
+                 delta=f"${checklist_val['total'] - ai_checklist_val['total']:,.0f}")
+        st.metric("Scorecard Method", f"${scorecard_val['total']:,.0f}",
+                 delta=f"${scorecard_val['total'] - ai_scorecard_val['total']:,.0f}")
+        average_val = (checklist_val['total'] + scorecard_val['total']) / 2
+        st.metric("Average", f"${average_val:,.0f}", 
+                 delta=f"${average_val - ai_average_val:,.0f}")
+    
+    # Create and display a bar chart comparing all valuations
     comparison_data = pd.DataFrame({
-        'Method': ['Checklist Method', 'Scorecard Method'],
-        'Valuation ($)': [checklist_val['total'], scorecard_val['total']]
+        'Method': ['Checklist (AI)', 'Checklist (Adjusted)', 
+                  'Scorecard (AI)', 'Scorecard (Adjusted)',
+                  'Average (AI)', 'Average (Adjusted)'],
+        'Valuation ($)': [ai_checklist_val['total'], checklist_val['total'],
+                         ai_scorecard_val['total'], scorecard_val['total'],
+                         ai_average_val, average_val]
     })
     
     st.bar_chart(comparison_data.set_index('Method'))
-    
-    # Average valuation
-    average_val = (checklist_val['total'] + scorecard_val['total']) / 2
-    st.metric("Average Valuation", f"${average_val:,.0f}")
     
     # Button to view report
     st.button("⬅️ Back to Report", on_click=lambda: setattr(st.session_state, 'current_view', 'report'))
