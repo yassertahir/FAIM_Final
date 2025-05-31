@@ -1,12 +1,14 @@
 import streamlit as st
 import time
 import os
+import re
 from openai import OpenAI
 from utils import create_assistant, create_thread, create_message, get_response
 import json
 import speech_recognition as sr
 import numpy as np
 import pandas as pd
+import re
 
 # Set page configuration
 st.set_page_config(page_title="VC Assistant", layout="wide")
@@ -257,6 +259,207 @@ def extract_valuation_params(analysis_text):
     
     return valuation_data
 
+# Function to request detailed valuation parameters from the AI
+def request_valuation_parameters():
+    """Request detailed valuation parameters from the AI assistant."""
+    
+    if not st.session_state.thread_id or not st.session_state.assistant_id:
+        st.error("Error: Assistant not initialized properly.")
+        return st.session_state.valuation_data
+    
+    try:
+        # Create a specific message asking for valuation parameters
+        valuation_prompt = """
+        Based on the startup documents analyzed earlier, I need detailed valuation parameters for both methods:
+
+        1. CHECKLIST METHOD:
+        Provide specific percentage scores (0-100%) for each of these areas:
+        - Founders & Team (30% weight): [SCORE]%
+        - Idea (20% weight): [SCORE]%
+        - Market Size (20% weight): [SCORE]%
+        - Product & IP (15% weight): [SCORE]%
+        - Execution Potential (15% weight): [SCORE]%
+
+        2. SCORECARD METHOD:
+        Provide specific premium/discount multipliers for each area:
+        - Team Strength (24% weight): [MULTIPLIER]x
+        - Opportunity Size (22% weight): [MULTIPLIER]x
+        - Product/Service (20% weight): [MULTIPLIER]x
+        - Competition (16% weight): [MULTIPLIER]x
+        - Marketing & Sales (12% weight): [MULTIPLIER]x
+        - Need for Funding (6% weight): [MULTIPLIER]x
+
+        Please respond in a structured format with ONLY these values and brief justifications.
+        Use this exact format to make it easy to parse:
+
+        CHECKLIST METHOD:
+        Founders & Team: [SCORE]%
+        Justification: [1-2 SENTENCES]
+        
+        Idea: [SCORE]%
+        Justification: [1-2 SENTENCES]
+        
+        Market: [SCORE]%
+        Justification: [1-2 SENTENCES]
+        
+        Product & IP: [SCORE]%
+        Justification: [1-2 SENTENCES]
+        
+        Execution: [SCORE]%
+        Justification: [1-2 SENTENCES]
+
+        SCORECARD METHOD:
+        Team Strength: [MULTIPLIER]x
+        Justification: [1-2 SENTENCES]
+        
+        Opportunity Size: [MULTIPLIER]x
+        Justification: [1-2 SENTENCES]
+        
+        Product/Service: [MULTIPLIER]x
+        Justification: [1-2 SENTENCES]
+        
+        Competition: [MULTIPLIER]x
+        Justification: [1-2 SENTENCES]
+        
+        Marketing & Sales: [MULTIPLIER]x
+        Justification: [1-2 SENTENCES]
+        
+        Need for Funding: [MULTIPLIER]x
+        Justification: [1-2 SENTENCES]
+        """
+
+        # Send this message to the assistant
+        message = client.beta.threads.messages.create(
+            thread_id=st.session_state.thread_id,
+            role="user",
+            content=valuation_prompt
+        )
+        
+        with st.status("Getting AI valuation parameters...") as status:
+            # Create a run with focused instructions
+            run = client.beta.threads.runs.create(
+                thread_id=st.session_state.thread_id,
+                assistant_id=st.session_state.assistant_id,
+                instructions="""
+                Provide specific numerical values for all requested valuation parameters based on the startup documents.
+                Make sure to follow the exact format requested and provide brief justifications for each value.
+                Use your expertise as a VC to determine realistic values that distinguish this startup from others.
+                """
+            )
+            
+            # Wait for the run to complete
+            wait_for_active_runs(client, st.session_state.thread_id)
+            
+            # Get the response with valuation parameters
+            valuation_response = get_response(client, st.session_state.thread_id, st.session_state.assistant_id)
+            
+            # Parse the response to extract the valuation parameters
+            valuation_data = parse_valuation_parameters(valuation_response)
+            status.update(label="Valuation parameters obtained!", state="complete")
+        
+        # Store the raw response for reference
+        st.session_state.valuation_response = valuation_response
+        
+        return valuation_data
+    
+    except Exception as e:
+        st.error(f"Error requesting valuation parameters: {e}")
+        return st.session_state.valuation_data
+
+# Function to parse the valuation parameters from the AI's response
+def parse_valuation_parameters(response_text):
+    """Parse the AI's response to extract valuation parameters."""
+    
+    # Create a copy of the default valuation data
+    valuation_data = st.session_state.valuation_data.copy()
+    
+    try:
+        # Parse Checklist Method parameters
+        if "CHECKLIST METHOD:" in response_text and "Founders & Team:" in response_text:
+            # Extract Founders & Team score
+            if "Founders & Team:" in response_text:
+                match = re.search(r"Founders & Team:\s*(\d+)%", response_text)
+                if match:
+                    score = float(match.group(1)) / 100
+                    valuation_data["checklist"]["founders_team"]["score"] = score
+            
+            # Extract Idea score
+            if "Idea:" in response_text:
+                match = re.search(r"Idea:\s*(\d+)%", response_text)
+                if match:
+                    score = float(match.group(1)) / 100
+                    valuation_data["checklist"]["idea"]["score"] = score
+            
+            # Extract Market score
+            if "Market:" in response_text:
+                match = re.search(r"Market:\s*(\d+)%", response_text)
+                if match:
+                    score = float(match.group(1)) / 100
+                    valuation_data["checklist"]["market"]["score"] = score
+            
+            # Extract Product & IP score
+            if "Product & IP:" in response_text:
+                match = re.search(r"Product & IP:\s*(\d+)%", response_text)
+                if match:
+                    score = float(match.group(1)) / 100
+                    valuation_data["checklist"]["product_ip"]["score"] = score
+            
+            # Extract Execution score
+            if "Execution:" in response_text:
+                match = re.search(r"Execution:\s*(\d+)%", response_text)
+                if match:
+                    score = float(match.group(1)) / 100
+                    valuation_data["checklist"]["execution"]["score"] = score
+        
+        # Parse Scorecard Method parameters
+        if "SCORECARD METHOD:" in response_text and "Team Strength:" in response_text:
+            # Extract Team Strength multiplier
+            if "Team Strength:" in response_text:
+                match = re.search(r"Team Strength:\s*([\d\.]+)x", response_text)
+                if match:
+                    multiplier = float(match.group(1))
+                    valuation_data["scorecard"]["team_strength"]["multiplier"] = multiplier
+            
+            # Extract Opportunity Size multiplier
+            if "Opportunity Size:" in response_text:
+                match = re.search(r"Opportunity Size:\s*([\d\.]+)x", response_text)
+                if match:
+                    multiplier = float(match.group(1))
+                    valuation_data["scorecard"]["opportunity_size"]["multiplier"] = multiplier
+            
+            # Extract Product/Service multiplier
+            if "Product/Service:" in response_text:
+                match = re.search(r"Product/Service:\s*([\d\.]+)x", response_text)
+                if match:
+                    multiplier = float(match.group(1))
+                    valuation_data["scorecard"]["product_service"]["multiplier"] = multiplier
+            
+            # Extract Competition multiplier
+            if "Competition:" in response_text:
+                match = re.search(r"Competition:\s*([\d\.]+)x", response_text)
+                if match:
+                    multiplier = float(match.group(1))
+                    valuation_data["scorecard"]["competition"]["multiplier"] = multiplier
+            
+            # Extract Marketing & Sales multiplier
+            if "Marketing & Sales:" in response_text:
+                match = re.search(r"Marketing & Sales:\s*([\d\.]+)x", response_text)
+                if match:
+                    multiplier = float(match.group(1))
+                    valuation_data["scorecard"]["marketing_sales"]["multiplier"] = multiplier
+            
+            # Extract Need for Funding multiplier
+            if "Need for Funding:" in response_text:
+                match = re.search(r"Need for Funding:\s*([\d\.]+)x", response_text)
+                if match:
+                    multiplier = float(match.group(1))
+                    valuation_data["scorecard"]["need_funding"]["multiplier"] = multiplier
+    
+    except Exception as e:
+        st.warning(f"Error parsing valuation parameters: {e}")
+    
+    return valuation_data
+
 # Get or create assistant and thread
 assistant_id, thread_id = get_or_create_assistant_and_thread()
 st.session_state.assistant_id = assistant_id
@@ -443,7 +646,7 @@ if st.session_state.current_view == "upload":
                         "tools": [{"type": "code_interpreter"}]
                     })
                 
-                # Create a message with all attachments
+                # Create a message with all attachments - focus on just the report
                 message_text = f"""I've uploaded {len(file_ids)} files for analysis: {', '.join(file_names)}. 
                 Please analyze all files together for a comprehensive evaluation of this startup.
 
@@ -457,26 +660,8 @@ if st.session_state.current_view == "upload":
                 6. Overall score (1-10)
                 7. Final recommendation
 
-                Also include a detailed section on valuation analysis using both:
-
-                ✅ CHECKLIST METHOD
-                Evaluate these 5 areas from the documents. Each gets a weight and a score (0–100%):
-                - Founders & Team (30%)
-                - Idea (20%)
-                - Market Size (20%)
-                - Product & IP (15%)
-                - Execution Potential (15%)
-
-                ✅ SCORECARD METHOD
-                For each area, infer a premium or discount relative to the average startup:
-                - Team Strength (24%)
-                - Opportunity Size (22%) 
-                - Product/Service (20%)
-                - Competition (16%)
-                - Marketing & Sales (12%)
-                - Need for Funding (6%)
-
-                For each valuation metric, clearly explain the reasoning behind your chosen scores.
+                Do not include valuation details yet - I will ask for a detailed valuation assessment separately.
+                Focus on providing a comprehensive analysis of the startup first.
                 """
                 
                 # Create message with all attachments
@@ -553,8 +738,26 @@ elif st.session_state.current_view == "report":
         # Display the AI analysis
         st.markdown(st.session_state.ai_analysis)
         
-        # Button to proceed to valuation
-        st.button("Proceed to Valuation Models ➡️", on_click=lambda: setattr(st.session_state, 'current_view', 'valuation'))
+        # Add a button to proceed to valuation
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            # Button to request valuation parameters and proceed
+            if st.button("Get Valuation Parameters & Proceed ➡️", type="primary"):
+                with st.spinner("Requesting valuation parameters from AI..."):
+                    # Request AI-generated valuation parameters
+                    st.session_state.valuation_data = request_valuation_parameters()
+                    
+                    # Change view to valuation
+                    st.session_state.current_view = 'valuation'
+                    st.rerun()
+        
+        with col2:
+            # Button to proceed with default parameters
+            if st.button("Proceed with Default Parameters"):
+                # Just change the view without requesting new parameters
+                st.session_state.current_view = 'valuation'
+                st.rerun()
     else:
         st.warning("No analysis available. Please upload documents first.")
         st.session_state.current_view = "upload"
@@ -568,6 +771,11 @@ elif st.session_state.current_view == "valuation":
         st.warning("No analysis available. Please upload documents first.")
         st.session_state.current_view = "upload"
         st.rerun()
+    
+    # Display valuation parameters justification if available
+    if 'valuation_response' in st.session_state:
+        with st.expander("AI Valuation Justifications", expanded=False):
+            st.markdown(st.session_state.valuation_response)
     
     # Create tabs for the two valuation methods
     tab1, tab2 = st.tabs(["Checklist Method", "Scorecard Method"])
