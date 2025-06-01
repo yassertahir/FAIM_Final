@@ -1180,8 +1180,11 @@ if st.session_state.current_view == "upload":
                         In the Regional Market Analysis section, explicitly state which region the startup operates in 
                         and explain the evidence for this determination.
                         
-                        IMPORTANT: We have ML-based valuation data for this startup from Pitchbook data, so DO NOT include 
-                        Checklist Method scores or Scorecard Method multipliers in your analysis. Simply identify the region.
+                        IMPORTANT: We have ML-based valuation data for this startup from Pitchbook data. 
+                        DO NOT include any Checklist Method scores or Scorecard Method multipliers in your analysis. 
+                        The startup's valuation will be calculated using our machine learning model instead of traditional methods.
+                        Simply focus on providing an insightful analysis of the startup's prospects, team, market, and competition,
+                        and clearly identify the region of operation.
                         """
                     else:
                         instructions = """Please analyze all the uploaded files to provide a comprehensive evaluation of the startup proposal.
@@ -1288,34 +1291,35 @@ elif st.session_state.current_view == "report":
         # Create a divider
         st.divider()
         
-        # Add valuation parameter sliders directly on the report page
-        st.subheader("Valuation Base Parameters")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Perfect valuation for Checklist Method as a slider
-            perfect_val = st.slider(
-                "Perfect Valuation (Checklist Method) ($)",
-                min_value=1000000,
-                max_value=100000000,
-                value=int(st.session_state.valuation_data["checklist"]["perfect_valuation"]),
-                step=500000,
-                format="$%d"
-            )
-            st.session_state.valuation_data["checklist"]["perfect_valuation"] = perfect_val
-        
-        with col2:
-            # Median valuation for Scorecard Method as a slider
-            median_val = st.slider(
-                "Median Industry Valuation (Scorecard Method) ($)",
-                min_value=1000000,
-                max_value=100000000,
-                value=int(st.session_state.valuation_data["scorecard"]["median_valuation"]),
-                step=500000,
-                format="$%d"
-            )
-            st.session_state.valuation_data["scorecard"]["median_valuation"] = median_val
+        # Only show valuation parameter sliders if ML prediction is not available
+        if not ml_prediction_available:
+            st.subheader("Valuation Base Parameters")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Perfect valuation for Checklist Method as a slider
+                perfect_val = st.slider(
+                    "Perfect Valuation (Checklist Method) ($)",
+                    min_value=1000000,
+                    max_value=100000000,
+                    value=int(st.session_state.valuation_data["checklist"]["perfect_valuation"]),
+                    step=500000,
+                    format="$%d"
+                )
+                st.session_state.valuation_data["checklist"]["perfect_valuation"] = perfect_val
+            
+            with col2:
+                # Median valuation for Scorecard Method as a slider
+                median_val = st.slider(
+                    "Median Industry Valuation (Scorecard Method) ($)",
+                    min_value=1000000,
+                    max_value=100000000,
+                    value=int(st.session_state.valuation_data["scorecard"]["median_valuation"]),
+                    step=500000,
+                    format="$%d"
+                )
+                st.session_state.valuation_data["scorecard"]["median_valuation"] = median_val
             
         # Store a deep copy of the AI predictions if not already stored
         if 'ai_predicted_values' not in st.session_state:
@@ -1350,23 +1354,41 @@ elif st.session_state.current_view == "valuation":
     region_name = st.session_state.valuation_data["region"]["selected"]
     region_factor = st.session_state.valuation_data["region"]["scaling_factors"][region_name]
     
-    st.markdown(f"""
-    ## Valuation Overview
+    # Check if ML prediction is available
+    ml_prediction_available = st.session_state.valuation_data["ml_prediction"]["is_available"]
     
-    This section provides two different methods to calculate the valuation of the startup:
-    
-    1. **Checklist Method**: Evaluates specific areas with percentage scores against a perfect valuation
-    2. **Scorecard Method**: Applies premium/discount multipliers to a median industry valuation
-    
-    The sliders are pre-set with AI-predicted values based on the pitchdeck quality, but you can adjust them.
-    
-    ### Regional Adjustment
-    
-    **Auto-Detected Region: {region_name}**  
-    **Regional Scaling Factor: {region_factor:.2f}x** *(valuations are scaled by this factor to account for regional market conditions)*
-    
-    *The region was automatically detected from your documents. You can change it below if needed.*
-    """)
+    if ml_prediction_available:
+        st.markdown(f"""
+        ## ML-Based Valuation Overview
+        
+        This startup is being valued using our machine learning model trained on Pitchbook data.
+        The model incorporates regional market conditions and industry-specific factors to generate a data-driven valuation.
+        
+        ### Regional Adjustment
+        
+        **Auto-Detected Region: {region_name}**  
+        **Regional Scaling Factor: {region_factor:.2f}x** *(ML predictions are adjusted by this factor to account for regional market conditions)*
+        
+        *The region was automatically detected from your documents. You can change it below if needed.*
+        """)
+    else:
+        st.markdown(f"""
+        ## Valuation Overview
+        
+        This section provides two different methods to calculate the valuation of the startup:
+        
+        1. **Checklist Method**: Evaluates specific areas with percentage scores against a perfect valuation
+        2. **Scorecard Method**: Applies premium/discount multipliers to a median industry valuation
+        
+        The sliders are pre-set with AI-predicted values based on the pitchdeck quality, but you can adjust them.
+        
+        ### Regional Adjustment
+        
+        **Auto-Detected Region: {region_name}**  
+        **Regional Scaling Factor: {region_factor:.2f}x** *(valuations are scaled by this factor to account for regional market conditions)*
+        
+        *The region was automatically detected from your documents. You can change it below if needed.*
+        """)
             
     # Add controls for region selection and reset to AI values
     col1, col2 = st.columns(2)
@@ -1384,409 +1406,466 @@ elif st.session_state.current_view == "valuation":
         # Update the selected region
         if selected_region != st.session_state.valuation_data["region"]["selected"]:
             st.session_state.valuation_data["region"]["selected"] = selected_region
+            
+            # If using ML prediction, inform the user that regional adjustment affects ML valuation
+            if ml_prediction_available:
+                st.info(f"The ML-based valuation will be adjusted based on the {selected_region} regional market conditions.")
+            
             st.rerun()
     
     with col2:
-        # Add a reset button to restore AI predictions
-        if st.button("Reset to AI-Predicted Values"):
-            # Deep copy to ensure we don't have reference issues
-            import copy
-            current_region = st.session_state.valuation_data["region"]["selected"]
-            st.session_state.valuation_data = copy.deepcopy(st.session_state.ai_predicted_values)
-            
-            # Debug info
-            if st.session_state.get("debug_mode", False):
-                st.sidebar.write("Reset to AI predicted values")
-                st.sidebar.write(f"Founders score: {st.session_state.valuation_data['checklist']['founders_team']['score']:.2f}")
-                st.sidebar.write(f"Team multiplier: {st.session_state.valuation_data['scorecard']['team_strength']['multiplier']:.1f}x")
-            st.rerun()
+        if ml_prediction_available:
+            # For ML prediction, offer button to recalculate with regional adjustment
+            if st.button("Apply Regional Adjustment to ML Prediction"):
+                # No need to reset values since we're only using ML prediction
+                st.success(f"ML prediction adjusted for {selected_region} regional market conditions.")
+                st.rerun()
+        else:
+            # For traditional methods, add reset button to restore AI predictions
+            if st.button("Reset to AI-Predicted Values"):
+                # Deep copy to ensure we don't have reference issues
+                import copy
+                current_region = st.session_state.valuation_data["region"]["selected"]
+                st.session_state.valuation_data = copy.deepcopy(st.session_state.ai_predicted_values)
+                
+                # Debug info
+                if st.session_state.get("debug_mode", False):
+                    st.sidebar.write("Reset to AI predicted values")
+                    st.sidebar.write(f"Founders score: {st.session_state.valuation_data['checklist']['founders_team']['score']:.2f}")
+                    st.sidebar.write(f"Team multiplier: {st.session_state.valuation_data['scorecard']['team_strength']['multiplier']:.1f}x")
+                st.rerun()
     
-    # Create tabs for the two valuation methods
-    tab1, tab2 = st.tabs(["Checklist Method", "Scorecard Method"])
+    # Check if ML prediction is available
+    ml_prediction_available = st.session_state.valuation_data["ml_prediction"]["is_available"]
     
-    with tab1:
-        st.header("Checklist Method")
+    # Show different view based on whether ML prediction is available
+    if ml_prediction_available:
+        st.success("Using Machine Learning prediction for valuation instead of traditional methods")
+        
+        # Display ML prediction details
+        ml_prediction_val = st.session_state.valuation_data["ml_prediction"]["predicted_value"]
+        ml_confidence = st.session_state.valuation_data["ml_prediction"]["confidence_score"]
+        features_present = st.session_state.valuation_data["ml_prediction"]["features_present"]
+        
+        st.metric("ML-Predicted Valuation", f"${ml_prediction_val:,.0f}")
+        st.progress(ml_confidence/100, text=f"Confidence: {ml_confidence:.1f}%")
+        
+        feature_info = get_required_features()
+        total_features = len(feature_info['numerical_features']) + len(feature_info['categorical_features'])
+        st.info(f"This valuation is based on {features_present}/{total_features} features from Pitchbook data")
+        
         st.markdown("""
-        This method evaluates 5 key areas with weighted scores, then multiplies by a perfect valuation
+        ### Machine Learning Valuation Methodology
+        
+        This startup has been valued using our advanced machine learning model trained on Pitchbook data.
+        The model analyzes various factors such as:
+        
+        - Deal size and structure
+        - Industry sector performance
+        - Growth metrics
+        - Investment stage
+        - Market conditions
+        
+        The traditional checklist and scorecard valuation methods have been bypassed in favor of this more data-driven approach.
         """)
+    else:
+        # Create tabs for the two valuation methods
+        tab1, tab2 = st.tabs(["Checklist Method", "Scorecard Method"])
         
-        # Perfect valuation input as a slider
-        perfect_val = st.slider(
-            "Perfect Valuation ($)",
-            min_value=1000000,
-            max_value=100000000,
-            value=int(st.session_state.valuation_data["checklist"]["perfect_valuation"]),
-            step=500000,
-            format="$%d",
-            key="checklist_perfect_val"
-        )
-        st.session_state.valuation_data["checklist"]["perfect_valuation"] = perfect_val
-        
-        # Create a more compact layout with columns for factor sliders
-        st.write("### Adjust Scores for Each Factor")
-        
-        # First row: Founders & Team and Idea
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Founders & Team
-            st.write("**Founders & Team (30%)**")
-            # Show the AI-predicted value first
-            ai_founders_score = st.session_state.ai_predicted_values["checklist"]["founders_team"]["score"]
-            st.caption(f"AI-predicted value: {ai_founders_score:.0%}")
+        with tab1:
+            st.header("Checklist Method")
+            st.markdown("""
+            This method evaluates 5 key areas with weighted scores, then multiplies by a perfect valuation
+            """)
             
-            # Then show the slider for adjustment
-            founders_score = st.slider(
+            # Perfect valuation input as a slider
+            perfect_val = st.slider(
+                "Perfect Valuation ($)",
+                min_value=1000000,
+                max_value=100000000,
+                value=int(st.session_state.valuation_data["checklist"]["perfect_valuation"]),
+                step=500000,
+                format="$%d",
+                key="checklist_perfect_val"
+            )
+            st.session_state.valuation_data["checklist"]["perfect_valuation"] = perfect_val
+            
+            # Create a more compact layout with columns for factor sliders
+            st.write("### Adjust Scores for Each Factor")
+            
+            # First row: Founders & Team and Idea
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Founders & Team
+                st.write("**Founders & Team (30%)**")
+                # Show the AI-predicted value first
+                ai_founders_score = st.session_state.ai_predicted_values["checklist"]["founders_team"]["score"]
+                st.caption(f"AI-predicted value: {ai_founders_score:.0%}")
+                
+                # Then show the slider for adjustment
+                founders_score = st.slider(
+                    "Score",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=st.session_state.valuation_data["checklist"]["founders_team"]["score"],
+                    step=0.05,
+                    format="%.0f%%",
+                    key="founders_score"
+                )
+                st.session_state.valuation_data["checklist"]["founders_team"]["score"] = founders_score
+            
+            with col2:
+                # Idea
+                st.write("**Idea (20%)**")
+                # Show AI-predicted value
+                ai_idea_score = st.session_state.ai_predicted_values["checklist"]["idea"]["score"]
+                st.caption(f"AI-predicted value: {ai_idea_score:.0%}")
+                
+                idea_score = st.slider(
+                    "Score",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=st.session_state.valuation_data["checklist"]["idea"]["score"],
+                    step=0.05,
+                    format="%.0f%%",
+                    key="idea_score"
+                )
+                st.session_state.valuation_data["checklist"]["idea"]["score"] = idea_score
+            
+            # Second row: Market Size and Product and IP
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Market Size
+                st.write("**Market Size (20%)**")
+                # Show AI-predicted value
+                ai_market_score = st.session_state.ai_predicted_values["checklist"]["market"]["score"]
+                st.caption(f"AI-predicted value: {ai_market_score:.0%}")
+                
+                market_score = st.slider(
+                    "Score",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=st.session_state.valuation_data["checklist"]["market"]["score"],
+                    step=0.05,
+                    format="%.0f%%",
+                    key="market_score"
+                )
+                st.session_state.valuation_data["checklist"]["market"]["score"] = market_score
+            
+            with col2:
+                # Product and IP
+                st.write("**Product and IP (15%)**")
+                # Show AI-predicted value
+                ai_product_score = st.session_state.ai_predicted_values["checklist"]["product_ip"]["score"]
+                st.caption(f"AI-predicted value: {ai_product_score:.0%}")
+                
+                product_score = st.slider(
+                    "Score",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=st.session_state.valuation_data["checklist"]["product_ip"]["score"],
+                    step=0.05,
+                    format="%.0f%%",
+                    key="product_score"
+                )
+                st.session_state.valuation_data["checklist"]["product_ip"]["score"] = product_score
+            
+            # Third row: Execution only
+            st.write("**Execution (15%)**")
+            # Show AI-predicted value
+            ai_execution_score = st.session_state.ai_predicted_values["checklist"]["execution"]["score"]
+            st.caption(f"AI-predicted value: {ai_execution_score:.0%}")
+            
+            execution_score = st.slider(
                 "Score",
                 min_value=0.0,
                 max_value=1.0,
-                value=st.session_state.valuation_data["checklist"]["founders_team"]["score"],
+                value=st.session_state.valuation_data["checklist"]["execution"]["score"],
                 step=0.05,
                 format="%.0f%%",
-                key="founders_score"
+                key="execution_score"
             )
-            st.session_state.valuation_data["checklist"]["founders_team"]["score"] = founders_score
-        
-        with col2:
-            # Idea
-            st.write("**Idea (20%)**")
-            # Show AI-predicted value
-            ai_idea_score = st.session_state.ai_predicted_values["checklist"]["idea"]["score"]
-            st.caption(f"AI-predicted value: {ai_idea_score:.0%}")
+            st.session_state.valuation_data["checklist"]["execution"]["score"] = execution_score
             
-            idea_score = st.slider(
-                "Score",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.valuation_data["checklist"]["idea"]["score"],
-                step=0.05,
-                format="%.0f%%",
-                key="idea_score"
-            )
-            st.session_state.valuation_data["checklist"]["idea"]["score"] = idea_score
-        
-        # Second row: Market Size and Product and IP
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Market Size
-            st.write("**Market Size (20%)**")
-            # Show AI-predicted value
-            ai_market_score = st.session_state.ai_predicted_values["checklist"]["market"]["score"]
-            st.caption(f"AI-predicted value: {ai_market_score:.0%}")
+            # Calculate valuation
+            checklist_val = calculate_checklist_valuation(st.session_state.valuation_data)
             
-            market_score = st.slider(
-                "Score",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.valuation_data["checklist"]["market"]["score"],
-                step=0.05,
-                format="%.0f%%",
-                key="market_score"
-            )
-            st.session_state.valuation_data["checklist"]["market"]["score"] = market_score
-        
-        with col2:
-            # Product and IP
-            st.write("**Product and IP (15%)**")
-            # Show AI-predicted value
-            ai_product_score = st.session_state.ai_predicted_values["checklist"]["product_ip"]["score"]
-            st.caption(f"AI-predicted value: {ai_product_score:.0%}")
+            # Display results in a table
+            st.subheader("Checklist Valuation Results")
+            checklist_df = pd.DataFrame({
+                "Key Measures": ["Founders & Team", "Idea", "Market", "Product and IP", "Execution", "TOTAL"],
+                "Weight": ["30%", "20%", "20%", "15%", "15%", "100%"],
+                "Score": [f"{founders_score:.0%}", f"{idea_score:.0%}", f"{market_score:.0%}", 
+                         f"{product_score:.0%}", f"{execution_score:.0%}", ""],
+                "Perfect Valuation": [f"${perfect_val:,.0f}", f"${perfect_val:,.0f}", 
+                                     f"${perfect_val:,.0f}", f"${perfect_val:,.0f}", 
+                                     f"${perfect_val:,.0f}", ""],
+                "Checklist Valuation": [
+                    f"${checklist_val['components']['founders_team']:,.0f}",
+                    f"${checklist_val['components']['idea']:,.0f}",
+                    f"${checklist_val['components']['market']:,.0f}",
+                    f"${checklist_val['components']['product_ip']:,.0f}",
+                    f"${checklist_val['components']['execution']:,.0f}",
+                    f"${checklist_val['total']:,.0f}"
+                ]
+            })
+            st.table(checklist_df)
             
-            product_score = st.slider(
-                "Score",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.valuation_data["checklist"]["product_ip"]["score"],
-                step=0.05,
-                format="%.0f%%",
-                key="product_score"
+            # Summary
+            st.success(f"Checklist Method Valuation: ${checklist_val['total']:,.0f}")
+        
+        with tab2:
+            st.header("Scorecard Method")
+            st.markdown("""
+            This method applies premium or discount multipliers to each weighted factor, then multiplies by a median valuation.
+            Adjust the sliders to see how different factors affect the valuation.
+            """)
+        
+            # Median valuation input as a slider
+            median_val = st.slider(
+                "Median Pre-money Valuation ($)",
+                min_value=1000000,
+                max_value=50000000,
+                value=int(st.session_state.valuation_data["scorecard"]["median_valuation"]),
+                step=500000,
+                format="$%d",
+                key="scorecard_median_val"
             )
-            st.session_state.valuation_data["checklist"]["product_ip"]["score"] = product_score
-        
-        # Third row: Execution only
-        st.write("**Execution (15%)**")
-        # Show AI-predicted value
-        ai_execution_score = st.session_state.ai_predicted_values["checklist"]["execution"]["score"]
-        st.caption(f"AI-predicted value: {ai_execution_score:.0%}")
-        
-        execution_score = st.slider(
-            "Score",
-            min_value=0.0,
-            max_value=1.0,
-            value=st.session_state.valuation_data["checklist"]["execution"]["score"],
-            step=0.05,
-            format="%.0f%%",
-            key="execution_score"
-        )
-        st.session_state.valuation_data["checklist"]["execution"]["score"] = execution_score
-        
-        # Calculate valuation
-        checklist_val = calculate_checklist_valuation(st.session_state.valuation_data)
-        
-        # Display results in a table
-        st.subheader("Checklist Valuation Results")
-        checklist_df = pd.DataFrame({
-            "Key Measures": ["Founders & Team", "Idea", "Market", "Product and IP", "Execution", "TOTAL"],
-            "Weight": ["30%", "20%", "20%", "15%", "15%", "100%"],
-            "Score": [f"{founders_score:.0%}", f"{idea_score:.0%}", f"{market_score:.0%}", 
-                     f"{product_score:.0%}", f"{execution_score:.0%}", ""],
-            "Perfect Valuation": [f"${perfect_val:,.0f}", f"${perfect_val:,.0f}", 
-                                 f"${perfect_val:,.0f}", f"${perfect_val:,.0f}", 
-                                 f"${perfect_val:,.0f}", ""],
-            "Checklist Valuation": [
-                f"${checklist_val['components']['founders_team']:,.0f}",
-                f"${checklist_val['components']['idea']:,.0f}",
-                f"${checklist_val['components']['market']:,.0f}",
-                f"${checklist_val['components']['product_ip']:,.0f}",
-                f"${checklist_val['components']['execution']:,.0f}",
-                f"${checklist_val['total']:,.0f}"
-            ]
-        })
-        st.table(checklist_df)
-        
-        # Summary
-        st.success(f"Checklist Method Valuation: ${checklist_val['total']:,.0f}")
+            st.session_state.valuation_data["scorecard"]["median_valuation"] = median_val
+            
+            # Create a more compact layout with columns for factor sliders
+            st.write("### Adjust Premium/Discount for Each Factor")
+            
+            # First row: Team Strength and Opportunity Size
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Team Strength
+                st.write("**Team Strength (24%)**")
+                # Show AI-predicted value
+                ai_team_multiplier = st.session_state.ai_predicted_values["scorecard"]["team_strength"]["multiplier"]
+                st.caption(f"AI-predicted value: {ai_team_multiplier:.1f}x")
+                
+                team_multiplier = st.slider(
+                    "Premium/Discount",
+                    min_value=0.1,
+                    max_value=3.0,
+                    value=st.session_state.valuation_data["scorecard"]["team_strength"]["multiplier"],
+                    step=0.1,
+                    format="%.1fx",
+                    key="team_multiplier"
+                )
+                st.session_state.valuation_data["scorecard"]["team_strength"]["multiplier"] = team_multiplier
+            
+            with col2:
+                # Opportunity Size
+                st.write("**Opportunity Size (22%)**")
+                # Show AI-predicted value
+                ai_opportunity_multiplier = st.session_state.ai_predicted_values["scorecard"]["opportunity_size"]["multiplier"]
+                st.caption(f"AI-predicted value: {ai_opportunity_multiplier:.1f}x")
+                
+                opportunity_multiplier = st.slider(
+                    "Premium/Discount",
+                    min_value=0.1,
+                    max_value=3.0,
+                    value=st.session_state.valuation_data["scorecard"]["opportunity_size"]["multiplier"],
+                    step=0.1,
+                    format="%.1fx",
+                    key="opportunity_multiplier"
+                )
+                st.session_state.valuation_data["scorecard"]["opportunity_size"]["multiplier"] = opportunity_multiplier
+            
+            # Second row: Product/Service and Competition
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Product/Service
+                st.write("**Product/Service (20%)**")
+                # Show AI-predicted value
+                ai_product_multiplier = st.session_state.ai_predicted_values["scorecard"]["product_service"]["multiplier"]
+                st.caption(f"AI-predicted value: {ai_product_multiplier:.1f}x")
+                
+                product_multiplier = st.slider(
+                    "Premium/Discount",
+                    min_value=0.1,
+                    max_value=3.0,
+                    value=st.session_state.valuation_data["scorecard"]["product_service"]["multiplier"],
+                    step=0.1,
+                    format="%.1fx",
+                    key="product_multiplier"
+                )
+                st.session_state.valuation_data["scorecard"]["product_service"]["multiplier"] = product_multiplier
+            
+            with col2:
+                # Competition
+                st.write("**Competition (16%)**")
+                # Show AI-predicted value
+                ai_competition_multiplier = st.session_state.ai_predicted_values["scorecard"]["competition"]["multiplier"]
+                st.caption(f"AI-predicted value: {ai_competition_multiplier:.1f}x")
+                
+                competition_multiplier = st.slider(
+                    "Premium/Discount",
+                    min_value=0.1,
+                    max_value=3.0,
+                    value=st.session_state.valuation_data["scorecard"]["competition"]["multiplier"],
+                    step=0.1,
+                    format="%.1fx",
+                    key="competition_multiplier"
+                )
+                st.session_state.valuation_data["scorecard"]["competition"]["multiplier"] = competition_multiplier
+            
+            # Third row: Marketing & Sales and Need for Funding
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Marketing & Sales
+                st.write("**Marketing & Sales (12%)**")
+                # Show AI-predicted value
+                ai_marketing_multiplier = st.session_state.ai_predicted_values["scorecard"]["marketing_sales"]["multiplier"]
+                st.caption(f"AI-predicted value: {ai_marketing_multiplier:.1f}x")
+                
+                marketing_multiplier = st.slider(
+                    "Premium/Discount",
+                    min_value=0.1,
+                    max_value=3.0,
+                    value=st.session_state.valuation_data["scorecard"]["marketing_sales"]["multiplier"],
+                    step=0.1,
+                    format="%.1fx",
+                    key="marketing_multiplier"
+                )
+                st.session_state.valuation_data["scorecard"]["marketing_sales"]["multiplier"] = marketing_multiplier
+            
+            with col2:
+                # Need for Funding
+                st.write("**Need for Funding (6%)**")
+                # Show AI-predicted value
+                ai_funding_multiplier = st.session_state.ai_predicted_values["scorecard"]["need_funding"]["multiplier"]
+                st.caption(f"AI-predicted value: {ai_funding_multiplier:.1f}x")
+                
+                funding_multiplier = st.slider(
+                    "Premium/Discount",
+                    min_value=0.1,
+                    max_value=3.0,
+                    value=st.session_state.valuation_data["scorecard"]["need_funding"]["multiplier"],
+                    step=0.1,
+                    format="%.1fx",
+                    key="funding_multiplier"
+                )
+                st.session_state.valuation_data["scorecard"]["need_funding"]["multiplier"] = funding_multiplier
+            
+            # Calculate valuation
+            scorecard_val = calculate_scorecard_valuation(st.session_state.valuation_data)
+            
+            # Display results in a table
+            st.subheader("Scorecard Valuation Results")
+            scorecard_df = pd.DataFrame({
+                "Key Measures": ["Team Strength", "Opportunity Size", "Product/Service", 
+                            "Competition", "Marketing & Sales", "Need for Funding", "TOTAL"],
+                "Weight": ["24%", "22%", "20%", "16%", "12%", "6%", "100%"],
+                "Premium/Discount": [
+                    f"{team_multiplier:.1f}x", 
+                    f"{opportunity_multiplier:.1f}x", 
+                    f"{product_multiplier:.1f}x", 
+                    f"{competition_multiplier:.1f}x", 
+                    f"{marketing_multiplier:.1f}x", 
+                    f"{funding_multiplier:.1f}x", 
+                    ""
+                ],
+                "Pre-money Median": [
+                    f"${median_val:,.0f}", 
+                    f"${median_val:,.0f}", 
+                    f"${median_val:,.0f}", 
+                    f"${median_val:,.0f}", 
+                    f"${median_val:,.0f}", 
+                    f"${median_val:,.0f}", 
+                    ""
+                ],
+                "Scorecard Valuation": [
+                    f"${scorecard_val['components']['team_strength']:,.0f}",
+                    f"${scorecard_val['components']['opportunity_size']:,.0f}",
+                    f"${scorecard_val['components']['product_service']:,.0f}",
+                    f"${scorecard_val['components']['competition']:,.0f}",
+                    f"${scorecard_val['components']['marketing_sales']:,.0f}",
+                    f"${scorecard_val['components']['need_funding']:,.0f}",
+                    f"${scorecard_val['total']:,.0f}"
+                ]
+            })
+            st.table(scorecard_df)
+            
+            # Summary
+            st.success(f"Scorecard Method Valuation: ${scorecard_val['total']:,.0f}")
     
-    with tab2:
-        st.header("Scorecard Method")
-        st.markdown("""
-        This method applies premium or discount multipliers to each weighted factor, then multiplies by a median valuation.
-        Adjust the sliders to see how different factors affect the valuation.
-        """)
-        
-        # Median valuation input as a slider
-        median_val = st.slider(
-            "Median Pre-money Valuation ($)",
-            min_value=1000000,
-            max_value=50000000,
-            value=int(st.session_state.valuation_data["scorecard"]["median_valuation"]),
-            step=500000,
-            format="$%d",
-            key="scorecard_median_val"
-        )
-        st.session_state.valuation_data["scorecard"]["median_valuation"] = median_val
-        
-        # Create a more compact layout with columns for factor sliders
-        st.write("### Adjust Premium/Discount for Each Factor")
-        
-        # First row: Team Strength and Opportunity Size
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Team Strength
-            st.write("**Team Strength (24%)**")
-            # Show AI-predicted value
-            ai_team_multiplier = st.session_state.ai_predicted_values["scorecard"]["team_strength"]["multiplier"]
-            st.caption(f"AI-predicted value: {ai_team_multiplier:.1f}x")
-            
-            team_multiplier = st.slider(
-                "Premium/Discount",
-                min_value=0.1,
-                max_value=3.0,
-                value=st.session_state.valuation_data["scorecard"]["team_strength"]["multiplier"],
-                step=0.1,
-                format="%.1fx",
-                key="team_multiplier"
-            )
-            st.session_state.valuation_data["scorecard"]["team_strength"]["multiplier"] = team_multiplier
-        
-        with col2:
-            # Opportunity Size
-            st.write("**Opportunity Size (22%)**")
-            # Show AI-predicted value
-            ai_opportunity_multiplier = st.session_state.ai_predicted_values["scorecard"]["opportunity_size"]["multiplier"]
-            st.caption(f"AI-predicted value: {ai_opportunity_multiplier:.1f}x")
-            
-            opportunity_multiplier = st.slider(
-                "Premium/Discount",
-                min_value=0.1,
-                max_value=3.0,
-                value=st.session_state.valuation_data["scorecard"]["opportunity_size"]["multiplier"],
-                step=0.1,
-                format="%.1fx",
-                key="opportunity_multiplier"
-            )
-            st.session_state.valuation_data["scorecard"]["opportunity_size"]["multiplier"] = opportunity_multiplier
-        
-        # Second row: Product/Service and Competition
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Product/Service
-            st.write("**Product/Service (20%)**")
-            # Show AI-predicted value
-            ai_product_multiplier = st.session_state.ai_predicted_values["scorecard"]["product_service"]["multiplier"]
-            st.caption(f"AI-predicted value: {ai_product_multiplier:.1f}x")
-            
-            product_multiplier = st.slider(
-                "Premium/Discount",
-                min_value=0.1,
-                max_value=3.0,
-                value=st.session_state.valuation_data["scorecard"]["product_service"]["multiplier"],
-                step=0.1,
-                format="%.1fx",
-                key="product_multiplier"
-            )
-            st.session_state.valuation_data["scorecard"]["product_service"]["multiplier"] = product_multiplier
-        
-        with col2:
-            # Competition
-            st.write("**Competition (16%)**")
-            # Show AI-predicted value
-            ai_competition_multiplier = st.session_state.ai_predicted_values["scorecard"]["competition"]["multiplier"]
-            st.caption(f"AI-predicted value: {ai_competition_multiplier:.1f}x")
-            
-            competition_multiplier = st.slider(
-                "Premium/Discount",
-                min_value=0.1,
-                max_value=3.0,
-                value=st.session_state.valuation_data["scorecard"]["competition"]["multiplier"],
-                step=0.1,
-                format="%.1fx",
-                key="competition_multiplier"
-            )
-            st.session_state.valuation_data["scorecard"]["competition"]["multiplier"] = competition_multiplier
-        
-        # Third row: Marketing & Sales and Need for Funding
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Marketing & Sales
-            st.write("**Marketing & Sales (12%)**")
-            # Show AI-predicted value
-            ai_marketing_multiplier = st.session_state.ai_predicted_values["scorecard"]["marketing_sales"]["multiplier"]
-            st.caption(f"AI-predicted value: {ai_marketing_multiplier:.1f}x")
-            
-            marketing_multiplier = st.slider(
-                "Premium/Discount",
-                min_value=0.1,
-                max_value=3.0,
-                value=st.session_state.valuation_data["scorecard"]["marketing_sales"]["multiplier"],
-                step=0.1,
-                format="%.1fx",
-                key="marketing_multiplier"
-            )
-            st.session_state.valuation_data["scorecard"]["marketing_sales"]["multiplier"] = marketing_multiplier
-        
-        with col2:
-            # Need for Funding
-            st.write("**Need for Funding (6%)**")
-            # Show AI-predicted value
-            ai_funding_multiplier = st.session_state.ai_predicted_values["scorecard"]["need_funding"]["multiplier"]
-            st.caption(f"AI-predicted value: {ai_funding_multiplier:.1f}x")
-            
-            funding_multiplier = st.slider(
-                "Premium/Discount",
-                min_value=0.1,
-                max_value=3.0,
-                value=st.session_state.valuation_data["scorecard"]["need_funding"]["multiplier"],
-                step=0.1,
-                format="%.1fx",
-                key="funding_multiplier"
-            )
-            st.session_state.valuation_data["scorecard"]["need_funding"]["multiplier"] = funding_multiplier
-        
-        # Calculate valuation
-        scorecard_val = calculate_scorecard_valuation(st.session_state.valuation_data)
-        
-        # Display results in a table
-        st.subheader("Scorecard Valuation Results")
-        scorecard_df = pd.DataFrame({
-            "Key Measures": ["Team Strength", "Opportunity Size", "Product/Service", 
-                           "Competition", "Marketing & Sales", "Need for Funding", "TOTAL"],
-            "Weight": ["24%", "22%", "20%", "16%", "12%", "6%", "100%"],
-            "Premium/Discount": [
-                f"{team_multiplier:.1f}x", 
-                f"{opportunity_multiplier:.1f}x", 
-                f"{product_multiplier:.1f}x", 
-                f"{competition_multiplier:.1f}x", 
-                f"{marketing_multiplier:.1f}x", 
-                f"{funding_multiplier:.1f}x", 
-                ""
-            ],
-            "Pre-money Median": [
-                f"${median_val:,.0f}", 
-                f"${median_val:,.0f}", 
-                f"${median_val:,.0f}", 
-                f"${median_val:,.0f}", 
-                f"${median_val:,.0f}", 
-                f"${median_val:,.0f}", 
-                ""
-            ],
-            "Scorecard Valuation": [
-                f"${scorecard_val['components']['team_strength']:,.0f}",
-                f"${scorecard_val['components']['opportunity_size']:,.0f}",
-                f"${scorecard_val['components']['product_service']:,.0f}",
-                f"${scorecard_val['components']['competition']:,.0f}",
-                f"${scorecard_val['components']['marketing_sales']:,.0f}",
-                f"${scorecard_val['components']['need_funding']:,.0f}",
-                f"${scorecard_val['total']:,.0f}"
-            ]
-        })
-        st.table(scorecard_df)
-        
-        # Summary
-        st.success(f"Scorecard Method Valuation: ${scorecard_val['total']:,.0f}")
-    
-    # Comparison of both methods
-    st.header("Valuation Comparison")
-    
-    # Calculate both valuations based on user adjustments
-    checklist_val = calculate_checklist_valuation(st.session_state.valuation_data)
-    scorecard_val = calculate_scorecard_valuation(st.session_state.valuation_data)
-    
-    # Calculate valuations based on AI predictions
-    ai_checklist_val = calculate_checklist_valuation(st.session_state.ai_predicted_values)
-    ai_scorecard_val = calculate_scorecard_valuation(st.session_state.ai_predicted_values)
+    # Valuation results section
+    st.header("Valuation Results")
     
     # Get ML prediction if available
     ml_prediction_available = st.session_state.valuation_data["ml_prediction"]["is_available"]
-    ml_prediction_val = st.session_state.valuation_data["ml_prediction"]["predicted_value"]
-    ml_confidence = st.session_state.valuation_data["ml_prediction"]["confidence_score"]
     
-    # Create columns for displaying valuations
+    # Show different views based on whether ML prediction is available
     if ml_prediction_available:
-        col1, col2, col3 = st.columns(3)
-    else:
-        col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("AI-Predicted Valuations")
-        st.metric("Checklist Method", f"${ai_checklist_val['total']:,.0f}")
-        st.metric("Scorecard Method", f"${ai_scorecard_val['total']:,.0f}")
-        ai_average_val = (ai_checklist_val['total'] + ai_scorecard_val['total']) / 2
-        st.metric("Average", f"${ai_average_val:,.0f}")
-    
-    with col2:
-        st.subheader("Your Adjusted Valuations")
-        st.metric("Checklist Method", f"${checklist_val['total']:,.0f}", 
-                 delta=f"${checklist_val['total'] - ai_checklist_val['total']:,.0f}")
-        st.metric("Scorecard Method", f"${scorecard_val['total']:,.0f}",
-                 delta=f"${scorecard_val['total'] - ai_scorecard_val['total']:,.0f}")
-        average_val = (checklist_val['total'] + scorecard_val['total']) / 2
-        st.metric("Average", f"${average_val:,.0f}", 
-                 delta=f"${average_val - ai_average_val:,.0f}")
-    
-    # Add ML prediction column if available
-    if ml_prediction_available:
-        with col3:
-            st.subheader("ML-Based Prediction")
-            st.metric("Pitchbook AI", f"${ml_prediction_val:,.0f}")
-            st.progress(ml_confidence/100, text=f"Confidence: {ml_confidence:.1f}%")
-            features_present = st.session_state.valuation_data["ml_prediction"]["features_present"]
-            feature_info = get_required_features()
-            total_features = len(feature_info['numerical_features']) + len(feature_info['categorical_features'])
-            st.caption(f"Based on {features_present}/{total_features} features from Pitchbook data")
-            
-            # Show explanation of ML prediction
+        # Display just the ML prediction with detailed information
+        ml_prediction_val = st.session_state.valuation_data["ml_prediction"]["predicted_value"]
+        ml_confidence = st.session_state.valuation_data["ml_prediction"]["confidence_score"]
+        features_present = st.session_state.valuation_data["ml_prediction"]["features_present"]
+        feature_info = get_required_features()
+        total_features = len(feature_info['numerical_features']) + len(feature_info['categorical_features'])
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.subheader("ML-Based Valuation Details")
             st.info("""
-            **Pitchbook ML Model**
+            **Pitchbook ML Model Valuation**
             
-            This valuation is generated by our machine learning model trained on real Pitchbook data. 
-            It's typically more accurate than traditional methods since it's based on actual market data 
-            rather than subjective assessments.
+            This startup's valuation is generated by our machine learning model trained on real Pitchbook data.
+            Traditional valuation methods (Checklist and Scorecard) have been bypassed in favor of this data-driven approach.
             """)
+            
+            st.markdown(f"""
+            ### Technical Information
+            - **Features Used**: {features_present} out of {total_features} available features
+            - **Confidence Score**: {ml_confidence:.1f}% (based on feature coverage and data quality)
+            - **Regional Market**: {region_name} (scaling factor: {region_factor:.2f}x)
+            """)
+        
+        with col2:
+            st.metric("ML-Predicted Valuation", f"${ml_prediction_val:,.0f}")
+            st.progress(ml_confidence/100, text=f"Confidence: {ml_confidence:.1f}%")
+            
+    else:
+        # Display traditional valuation methods comparison
+        # Calculate both valuations based on user adjustments
+        checklist_val = calculate_checklist_valuation(st.session_state.valuation_data)
+        scorecard_val = calculate_scorecard_valuation(st.session_state.valuation_data)
+        
+        # Calculate valuations based on AI predictions
+        ai_checklist_val = calculate_checklist_valuation(st.session_state.ai_predicted_values)
+        ai_scorecard_val = calculate_scorecard_valuation(st.session_state.ai_predicted_values)
+        
+        # Create columns for displaying traditional valuations
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("AI-Predicted Valuations")
+            st.metric("Checklist Method", f"${ai_checklist_val['total']:,.0f}")
+            st.metric("Scorecard Method", f"${ai_scorecard_val['total']:,.0f}")
+            ai_average_val = (ai_checklist_val['total'] + ai_scorecard_val['total']) / 2
+            st.metric("Average", f"${ai_average_val:,.0f}")
+        
+        with col2:
+            st.subheader("Your Adjusted Valuations")
+            st.metric("Checklist Method", f"${checklist_val['total']:,.0f}", 
+                    delta=f"${checklist_val['total'] - ai_checklist_val['total']:,.0f}")
+            st.metric("Scorecard Method", f"${scorecard_val['total']:,.0f}",
+                    delta=f"${scorecard_val['total'] - ai_scorecard_val['total']:,.0f}")
+            average_val = (checklist_val['total'] + scorecard_val['total']) / 2
+            st.metric("Average", f"${average_val:,.0f}", 
+                    delta=f"${average_val - ai_average_val:,.0f}") 
+            """It's typically more accurate than traditional methods since it's based on actual market data 
+            rather than subjective assessments.
+            """
             
             # Show a notice if ML prediction is significantly different
             threshold = 0.2  # 20% difference
@@ -1796,24 +1875,38 @@ elif st.session_state.current_view == "valuation":
             if diff_percentage > threshold:
                 st.info(f"⚠️ ML prediction differs by {diff_percentage:.1%} from traditional methods. Consider reviewing the valuation.")
     
-    # Create and display a bar chart comparing all valuations
-    methods = ['Checklist (AI)', 'Checklist (Adjusted)', 
-              'Scorecard (AI)', 'Scorecard (Adjusted)',
-              'Average (AI)', 'Average (Adjusted)']
-    
-    values = [ai_checklist_val['total'], checklist_val['total'],
-             ai_scorecard_val['total'], scorecard_val['total'],
-             ai_average_val, average_val]
-    
-    # Add ML prediction to the chart if available
+    # Create and display a bar chart for valuations
     if ml_prediction_available:
-        methods.append('Pitchbook AI')
-        values.append(ml_prediction_val)
-    
-    comparison_data = pd.DataFrame({
-        'Method': methods,
-        'Valuation ($)': values
-    })
+        # When ML prediction is available, just show that
+        methods = ['ML Prediction (Pitchbook AI)']
+        values = [ml_prediction_val]
+        
+        # Add reference to average regional valuation for context
+        region_name = st.session_state.valuation_data["region"]["selected"]
+        region_factor = st.session_state.valuation_data["region"]["scaling_factors"][region_name]
+        regional_avg = st.session_state.valuation_data["scorecard"]["median_valuation"] * region_factor
+        
+        methods.append(f'Regional Avg ({region_name})')
+        values.append(regional_avg)
+        
+        comparison_data = pd.DataFrame({
+            'Method': methods,
+            'Valuation ($)': values
+        })
+    else:
+        # When using traditional methods, show all valuation approaches
+        methods = ['Checklist (AI)', 'Checklist (Adjusted)', 
+                  'Scorecard (AI)', 'Scorecard (Adjusted)',
+                  'Average (AI)', 'Average (Adjusted)']
+        
+        values = [ai_checklist_val['total'], checklist_val['total'],
+                ai_scorecard_val['total'], scorecard_val['total'],
+                ai_average_val, average_val]
+        
+        comparison_data = pd.DataFrame({
+            'Method': methods,
+            'Valuation ($)': values
+        })
     
     st.bar_chart(comparison_data.set_index('Method'))
     
