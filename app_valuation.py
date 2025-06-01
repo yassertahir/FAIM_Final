@@ -260,6 +260,9 @@ def extract_valuation_params(analysis_text):
     # Default values if extraction fails - use deep copy to avoid reference issues
     valuation_data = copy.deepcopy(st.session_state.valuation_data)
     
+    # Check if we're using ML prediction - if so, we only need to extract the region
+    ml_prediction_available = st.session_state.get('pitchbook_data_available', False) and st.session_state.get('valuation_data', {}).get('ml_prediction', {}).get('is_available', False)
+    
     # Predict region from the analysis text
     predicted_region = predict_region_from_text(analysis_text)
     
@@ -275,6 +278,12 @@ def extract_valuation_params(analysis_text):
             st.sidebar.write(f"AI Text snippet (end):\n{analysis_text[-1000:]}")
         else:
             st.sidebar.write(f"AI Text snippet:\n{analysis_text}")
+    
+    # If using ML prediction, we only needed to extract region, so we can return early
+    if ml_prediction_available:
+        if st.session_state.get("debug_mode", False):
+            st.sidebar.write("Using ML prediction - skipping checklist and scorecard extraction")
+        return valuation_data
     
     try:
         # First attempt to find and extract organized sections in the output
@@ -667,9 +676,7 @@ def extract_parameters_with_fallback(full_text, valuation_data):
             "patterns": [
                 r"Need\s*(?:for)?\s*Funding:?\s*([\d\.]+)x",
                 r"Need\s*(?:for)?\s*Funding:?\s*([\d\.]+)\s*times",
-                r"Funding(?:\s*multiplier)?:?\s*([\d\.]+)",
-                r"Need\s*for\s*Funding(?:\s*multiplier)?:?\s*([\d\.]+)",
-                r"Funding\s*Need(?:\s*multiplier)?:?\s*([\d\.]+)"
+                r"Need\s*(?:for)?\s*Funding:?\s*([\d\.]+)"
             ],
             "data_key": "need_funding"
         }
@@ -728,10 +735,6 @@ def start_new_evaluation():
         st.session_state.pitchbook_data_df = None
         st.session_state.pitchbook_data_quality = {"is_valid": False, "message": "No data uploaded"}
         
-        # Set ML prediction to unavailable
-        st.session_state.valuation_data["ml_prediction"]["is_available"] = False
-        st.session_state.valuation_data["ml_prediction"]["predicted_value"] = 0
-        
         # Clear AI predicted values
         if 'ai_predicted_values' in st.session_state:
             del st.session_state.ai_predicted_values
@@ -756,6 +759,13 @@ def start_new_evaluation():
                 "competition": {"weight": 0.16, "multiplier": 1.3},
                 "marketing_sales": {"weight": 0.12, "multiplier": 0.9},
                 "need_funding": {"weight": 0.06, "multiplier": 1.0}
+            },
+            # ML prediction method
+            "ml_prediction": {
+                "is_available": False,
+                "predicted_value": 0,
+                "confidence_score": 0,
+                "features_present": 0
             },
             # Region settings
             "region": {
@@ -966,6 +976,15 @@ if st.session_state.current_view == "upload":
                         # Show the prediction
                         st.metric("AI-Predicted Valuation", f"${prediction[0]:,.2f}")
                         st.progress(confidence/100, text=f"Confidence: {confidence:.1f}% ({features_present}/{total_features} features present)")
+                        
+                        # Add an informative message about what this means
+                        st.info("""
+                        ℹ️ **ML-Based Valuation Active**
+                        
+                        When you analyze your startup documents, the system will now use this machine learning prediction 
+                        instead of asking the AI assistant to generate checklist and scorecard values. This provides a more 
+                        data-driven valuation based on real market data from Pitchbook.
+                        """)
                 else:
                     st.error(f"❌ {message}")
                     st.info("Please provide a CSV file with sufficient pitchbook data. Required fields include: Deal Size, Pre-money Valuation, Primary Industry Sector, Deal Type.")
@@ -1063,44 +1082,75 @@ if st.session_state.current_view == "upload":
                     })
                 
                 # Create a message with all attachments - focus on report with valuation criteria scores
-                message_text = f"""I've uploaded {len(file_ids)} files for analysis: {', '.join(file_names)}. 
-                Please analyze all files together for a comprehensive evaluation of this startup.
-
-                IMPORTANT: Identify the geographic region where this startup operates (e.g., MENA, South Asia, Southeast Asia, Latin America, Africa, Eastern Europe, or First World/Developed).
-
-                Follow the structure below and ensure your bullet points are expanded and thoroughly explained:
-
-                1. Summary of the proposal
-                2. Strengths (detailed bullet points/paragraphs)
-                3. Areas for improvement (detailed bullet points/paragraphs)
-                4. Team assessment (including a detailed table of team members if CVs are provided)
-                5. Competitive analysis (with names or descriptions of similar startups)
-                6. Regional market analysis (clearly specify which region the startup operates in)
-                7. Overall score (1-10)
-                8. Final recommendation
-                9. Valuation Criteria Scores (REQUIRED - use this exact format):
-
-                VALUATION CRITERIA SCORES:
+                # Check if ML prediction is available from pitchbook data
+                ml_prediction_available = st.session_state.get('pitchbook_data_available', False) and st.session_state.get('valuation_data', {}).get('ml_prediction', {}).get('is_available', False)
                 
-                CHECKLIST METHOD SCORES:
-                - Founders & Team: [SCORE]% (e.g. 75%)
-                - Idea: [SCORE]% (e.g. 65%)
-                - Market Size: [SCORE]% (e.g. 80%)
-                - Product & IP: [SCORE]% (e.g. 70%)
-                - Execution Potential: [SCORE]% (e.g. 60%)
-                
-                REGION: [REGION_NAME]
-                
-                SCORECARD METHOD MULTIPLIERS:
-                - Team Strength: [MULTIPLIER]x (e.g. 1.2x)
-                - Opportunity Size: [MULTIPLIER]x (e.g. 1.5x)
-                - Product/Service: [MULTIPLIER]x (e.g. 0.9x)
-                - Competition: [MULTIPLIER]x (e.g. 1.1x)
-                - Marketing & Sales: [MULTIPLIER]x (e.g. 0.8x)
-                - Need for Funding: [MULTIPLIER]x (e.g. 1.0x)
-                
-                Replace the examples with your actual assessments based on the pitchdeck. The valuation criteria scores must be included in your response with this exact format.
-                """
+                # Customize message based on ML prediction availability
+                if ml_prediction_available:
+                    # Message when ML prediction is available - no need for checklist and scorecard valuations
+                    message_text = f"""I've uploaded {len(file_ids)} files for analysis: {', '.join(file_names)}. 
+                    Please analyze all files together for a comprehensive evaluation of this startup.
+
+                    IMPORTANT: Identify the geographic region where this startup operates (e.g., MENA, South Asia, Southeast Asia, Latin America, Africa, Eastern Europe, or First World/Developed).
+
+                    ALSO IMPORTANT: We have ML-based valuation data for this startup from Pitchbook data. Skip the checklist and scorecard valuations - they are not needed.
+
+                    Follow the structure below and ensure your bullet points are expanded and thoroughly explained:
+
+                    1. Summary of the proposal
+                    2. Strengths (detailed bullet points/paragraphs)
+                    3. Areas for improvement (detailed bullet points/paragraphs)
+                    4. Team assessment (including a detailed table of team members if CVs are provided)
+                    5. Competitive analysis (with names or descriptions of similar startups)
+                    6. Regional market analysis (clearly specify which region the startup operates in)
+                    7. Overall score (1-10)
+                    8. Final recommendation
+                    9. Region Information (REQUIRED):
+
+                    REGION: [REGION_NAME]
+
+                    (Please note: Valuation will be calculated using Machine Learning predictions from Pitchbook data)
+                    """
+                else:
+                    # Original message when no ML prediction is available
+                    message_text = f"""I've uploaded {len(file_ids)} files for analysis: {', '.join(file_names)}. 
+                    Please analyze all files together for a comprehensive evaluation of this startup.
+
+                    IMPORTANT: Identify the geographic region where this startup operates (e.g., MENA, South Asia, Southeast Asia, Latin America, Africa, Eastern Europe, or First World/Developed).
+
+                    Follow the structure below and ensure your bullet points are expanded and thoroughly explained:
+
+                    1. Summary of the proposal
+                    2. Strengths (detailed bullet points/paragraphs)
+                    3. Areas for improvement (detailed bullet points/paragraphs)
+                    4. Team assessment (including a detailed table of team members if CVs are provided)
+                    5. Competitive analysis (with names or descriptions of similar startups)
+                    6. Regional market analysis (clearly specify which region the startup operates in)
+                    7. Overall score (1-10)
+                    8. Final recommendation
+                    9. Valuation Criteria Scores (REQUIRED - use this exact format):
+
+                    VALUATION CRITERIA SCORES:
+                    
+                    CHECKLIST METHOD SCORES:
+                    - Founders & Team: [SCORE]% (e.g. 75%)
+                    - Idea: [SCORE]% (e.g. 65%)
+                    - Market Size: [SCORE]% (e.g. 80%)
+                    - Product & IP: [SCORE]% (e.g. 70%)
+                    - Execution Potential: [SCORE]% (e.g. 60%)
+                    
+                    REGION: [REGION_NAME]
+                    
+                    SCORECARD METHOD MULTIPLIERS:
+                    - Team Strength: [MULTIPLIER]x (e.g. 1.2x)
+                    - Opportunity Size: [MULTIPLIER]x (e.g. 1.5x)
+                    - Product/Service: [MULTIPLIER]x (e.g. 0.9x)
+                    - Competition: [MULTIPLIER]x (e.g. 1.1x)
+                    - Marketing & Sales: [MULTIPLIER]x (e.g. 0.8x)
+                    - Need for Funding: [MULTIPLIER]x (e.g. 1.0x)
+                    
+                    Replace the examples with your actual assessments based on the pitchdeck. The valuation criteria scores must be included in your response with this exact format.
+                    """
                 
                 # Create message with all attachments
                 message = client.beta.threads.messages.create(
@@ -1115,35 +1165,53 @@ if st.session_state.current_view == "upload":
                 
                 # Show analysis in progress
                 with st.status("Analyzing startup proposal...") as status:
+                    # Check if ML prediction is available
+                    ml_prediction_available = st.session_state.get('pitchbook_data_available', False) and st.session_state.get('valuation_data', {}).get('ml_prediction', {}).get('is_available', False)
+                    
                     # Build dynamic instructions with region detection
-                    instructions = """Please analyze all the uploaded files to provide a comprehensive evaluation of the startup proposal.
-                    Use your VC evaluation framework and follow the structure requested in the message.
+                    if ml_prediction_available:
+                        instructions = """Please analyze all the uploaded files to provide a comprehensive evaluation of the startup proposal.
+                        Use your VC evaluation framework and follow the structure requested in the message.
+                        
+                        IMPORTANT: Identify which geographic region this startup operates in based on the documents (MENA, South Asia, 
+                        Southeast Asia, Latin America, Africa, Eastern Europe, or First World/Developed). This detection 
+                        is critical as it will affect the valuation calculation. Include this determination in your analysis.
+                        
+                        In the Regional Market Analysis section, explicitly state which region the startup operates in 
+                        and explain the evidence for this determination.
+                        
+                        IMPORTANT: We have ML-based valuation data for this startup from Pitchbook data, so DO NOT include 
+                        Checklist Method scores or Scorecard Method multipliers in your analysis. Simply identify the region.
+                        """
+                    else:
+                        instructions = """Please analyze all the uploaded files to provide a comprehensive evaluation of the startup proposal.
+                        Use your VC evaluation framework and follow the structure requested in the message.
+                        
+                        IMPORTANT: Identify which geographic region this startup operates in based on the documents (MENA, South Asia, 
+                        Southeast Asia, Latin America, Africa, Eastern Europe, or First World/Developed). This detection 
+                        is critical as it will affect the valuation calculation. Include this determination in your analysis.
+                        
+                        In the Regional Market Analysis section, explicitly state which region the startup operates in 
+                        and explain the evidence for this determination.
+                        
+                        Be specific about the values you assign to each valuation metric and explain your reasoning in detail.
+                        
+                        For the Checklist Method:
+                        - Founders & Team (30%): Assign a percentage score based on the team's experience and fit
+                        - Idea (20%): Assess the quality of the idea and problem-solution fit
+                        - Market Size (20%): Evaluate the TAM, SAM, and SOM
+                        - Product & IP (15%): Assess product uniqueness and IP protection
+                        - Execution Potential (15%): Evaluate the team's ability to execute the plan
+                        
+                        For the Scorecard Method:
+                        - Team Strength (24%): Assign a multiplier (premium or discount)
+                        - Opportunity Size (22%): Assess market potential with a multiplier
+                        - Product/Service (20%): Evaluate product quality with a multiplier
+                        - Competition (16%): Assess competitive landscape with a multiplier
+                        - Marketing & Sales (12%): Evaluate go-to-market strategy with a multiplier
+                        - Need for Funding (6%): Assess funding timing with a multiplier
+                        """
                     
-                    IMPORTANT: Identify which geographic region this startup operates in based on the documents (MENA, South Asia, 
-                    Southeast Asia, Latin America, Africa, Eastern Europe, or First World/Developed). This detection 
-                    is critical as it will affect the valuation calculation. Include this determination in your analysis.
-                    
-                    In the Regional Market Analysis section, explicitly state which region the startup operates in 
-                    and explain the evidence for this determination.
-                    
-                    Be specific about the values you assign to each valuation metric and explain your reasoning in detail.
-                    
-                    For the Checklist Method:
-                    - Founders & Team (30%): Assign a percentage score based on the team's experience and fit
-                    - Idea (20%): Assess the quality of the idea and problem-solution fit
-                    - Market Size (20%): Evaluate the TAM, SAM, and SOM
-                    - Product & IP (15%): Assess product uniqueness and IP protection
-                    - Execution Potential (15%): Evaluate the team's ability to execute the plan
-                    
-                    For the Scorecard Method:
-                    - Team Strength (24%): Assign a multiplier (premium or discount)
-                    - Opportunity Size (22%): Assess market potential with a multiplier
-                    - Product/Service (20%): Evaluate product quality with a multiplier
-                    - Competition (16%): Assess competitive landscape with a multiplier
-                    - Marketing & Sales (12%): Evaluate go-to-market strategy with a multiplier
-                    - Need for Funding (6%): Assess funding timing with a multiplier
-                    """
-
                     # Create a run with specific instructions
                     run = client.beta.threads.runs.create(
                         thread_id=st.session_state.thread_id,
@@ -1190,6 +1258,29 @@ if st.session_state.current_view == "upload":
 elif st.session_state.current_view == "report":
     if st.session_state.ai_analysis:
         st.title("Startup Evaluation Report")
+        
+        # Check if ML prediction is available
+        ml_prediction_available = st.session_state.get('pitchbook_data_available', False) and st.session_state.get('valuation_data', {}).get('ml_prediction', {}).get('is_available', False)
+        
+        # If ML prediction is available, display a notice at the top
+        if ml_prediction_available:
+            with st.expander("ML-based Valuation Information", expanded=True):
+                ml_prediction_val = st.session_state.valuation_data["ml_prediction"]["predicted_value"]
+                ml_confidence = st.session_state.valuation_data["ml_prediction"]["confidence_score"]
+                features_present = st.session_state.valuation_data["ml_prediction"]["features_present"]
+                
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.info("📊 Machine Learning Valuation Active: This startup has been valued using our advanced machine learning model trained on Pitchbook data. The traditional checklist and scorecard valuation methods have been bypassed in favor of this more data-driven approach.")
+                    
+                with col2:
+                    st.metric("ML-Predicted Valuation", f"${ml_prediction_val:,.0f}")
+                    st.progress(ml_confidence/100, text=f"Confidence: {ml_confidence:.1f}%")
+                
+                feature_info = get_required_features()
+                total_features = len(feature_info['numerical_features']) + len(feature_info['categorical_features'])
+                st.caption(f"Based on {features_present}/{total_features} features from Pitchbook data")
         
         # Display the AI analysis
         st.markdown(st.session_state.ai_analysis)
@@ -1316,8 +1407,7 @@ elif st.session_state.current_view == "valuation":
     with tab1:
         st.header("Checklist Method")
         st.markdown("""
-        This method evaluates 5 key areas with weighted scores, then multiplies by a perfect valuation.
-        Adjust the sliders to see how different factors affect the valuation.
+        This method evaluates 5 key areas with weighted scores, then multiplies by a perfect valuation
         """)
         
         # Perfect valuation input as a slider
@@ -1688,6 +1778,15 @@ elif st.session_state.current_view == "valuation":
             feature_info = get_required_features()
             total_features = len(feature_info['numerical_features']) + len(feature_info['categorical_features'])
             st.caption(f"Based on {features_present}/{total_features} features from Pitchbook data")
+            
+            # Show explanation of ML prediction
+            st.info("""
+            **Pitchbook ML Model**
+            
+            This valuation is generated by our machine learning model trained on real Pitchbook data. 
+            It's typically more accurate than traditional methods since it's based on actual market data 
+            rather than subjective assessments.
+            """)
             
             # Show a notice if ML prediction is significantly different
             threshold = 0.2  # 20% difference
