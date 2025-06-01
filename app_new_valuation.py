@@ -22,7 +22,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STORAGE_FILE = os.path.join(BASE_DIR, "assistant_data.json")
 
 # Show the file path in debug mode
-if st.sidebar.checkbox("Debug Mode", False):
+# Store debug mode setting in session state for consistent access
+if "debug_mode" not in st.session_state:
+    st.session_state.debug_mode = False
+    
+st.session_state.debug_mode = st.sidebar.checkbox("Debug Mode", st.session_state.debug_mode)
+if st.session_state.debug_mode:
     st.sidebar.info(f"Storage file location: {STORAGE_FILE}")
 
 # Initialize state variables if they don't exist
@@ -72,7 +77,8 @@ def get_or_create_assistant_and_thread():
                 try:
                     assistant = client.beta.assistants.retrieve(data.get("assistant_id", ""))
                     assistant_id = data["assistant_id"]
-                    if st.sidebar.checkbox("Debug Mode", False):
+                    # Use the existing debug mode state from the app
+                    if st.session_state.get("debug_mode", False):
                         st.sidebar.info(f"Using existing assistant: {assistant_id}")
                 except Exception as e:
                     st.sidebar.warning(f"Assistant retrieval error: {e}")
@@ -82,7 +88,8 @@ def get_or_create_assistant_and_thread():
                 try:
                     thread = client.beta.threads.retrieve(data.get("thread_id", ""))
                     thread_id = data["thread_id"]
-                    if st.sidebar.checkbox("Debug Mode", False):
+                    # Use the existing debug mode state from the app
+                    if st.session_state.get("debug_mode", False):
                         st.sidebar.info(f"Using existing thread: {thread_id}")
                 except Exception as e:
                     st.sidebar.warning(f"Thread retrieval error: {e}")
