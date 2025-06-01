@@ -121,6 +121,13 @@ def create_assistant(client):
                     Execution Potential (15%)
 
                     Multiply: score × weight × perfect valuation (default: $10M)
+                    
+                    ✅ REGION ANALYSIS
+                    Consider the region where the startup operates and comment on how regional factors impact:
+                    - Market potential
+                    - Competitive landscape
+                    - Funding environment
+                    - Growth trajectory
 
                     ✅ SCORECARD METHOD
                     For each area, infer a premium or discount relative to the average startup (baseline multiplier = 1.0). Multiply it by a median valuation (default: $8M in MENA):

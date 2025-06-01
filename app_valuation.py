@@ -58,6 +58,19 @@ if 'valuation_data' not in st.session_state:
             "competition": {"weight": 0.16, "multiplier": 1.3},
             "marketing_sales": {"weight": 0.12, "multiplier": 0.9},
             "need_funding": {"weight": 0.06, "multiplier": 1.0}
+        },
+        # Region settings
+        "region": {
+            "selected": "First World / Developed",
+            "scaling_factors": {
+                "First World / Developed": 1.0,                # Default multiplier (no adjustment)
+                "MENA (Middle East & North Africa)": 0.8,      # 20% reduction
+                "South Asia (India, Pakistan, etc.)": 0.65,    # 35% reduction
+                "Southeast Asia": 0.7,                         # 30% reduction
+                "Latin America": 0.75,                         # 25% reduction
+                "Africa (excl. North Africa)": 0.6,            # 40% reduction
+                "Eastern Europe": 0.85                         # 15% reduction
+            }
         }
     }
 
@@ -169,22 +182,28 @@ def calculate_checklist_valuation(valuation_data):
     checklist = valuation_data["checklist"]
     perfect_val = checklist["perfect_valuation"]
     
+    # Apply regional scaling factor
+    region_name = valuation_data["region"]["selected"]
+    region_factor = valuation_data["region"]["scaling_factors"][region_name]
+    
     founders_val = perfect_val * checklist["founders_team"]["weight"] * checklist["founders_team"]["score"]
     idea_val = perfect_val * checklist["idea"]["weight"] * checklist["idea"]["score"]
     market_val = perfect_val * checklist["market"]["weight"] * checklist["market"]["score"]
     product_val = perfect_val * checklist["product_ip"]["weight"] * checklist["product_ip"]["score"]
     execution_val = perfect_val * checklist["execution"]["weight"] * checklist["execution"]["score"]
     
-    total_val = founders_val + idea_val + market_val + product_val + execution_val
+    # Apply scaling to the total
+    total_val = (founders_val + idea_val + market_val + product_val + execution_val) * region_factor
     
+    # Scale individual components for consistency
     return {
         "total": total_val,
         "components": {
-            "founders_team": founders_val,
-            "idea": idea_val,
-            "market": market_val,
-            "product_ip": product_val,
-            "execution": execution_val
+            "founders_team": founders_val * region_factor,
+            "idea": idea_val * region_factor,
+            "market": market_val * region_factor,
+            "product_ip": product_val * region_factor,
+            "execution": execution_val * region_factor
         }
     }
 
@@ -193,6 +212,10 @@ def calculate_scorecard_valuation(valuation_data):
     scorecard = valuation_data["scorecard"]
     median_val = scorecard["median_valuation"]
     
+    # Apply regional scaling factor
+    region_name = valuation_data["region"]["selected"]
+    region_factor = valuation_data["region"]["scaling_factors"][region_name]
+    
     team_val = median_val * scorecard["team_strength"]["weight"] * scorecard["team_strength"]["multiplier"]
     opportunity_val = median_val * scorecard["opportunity_size"]["weight"] * scorecard["opportunity_size"]["multiplier"]
     product_val = median_val * scorecard["product_service"]["weight"] * scorecard["product_service"]["multiplier"]
@@ -200,17 +223,19 @@ def calculate_scorecard_valuation(valuation_data):
     marketing_val = median_val * scorecard["marketing_sales"]["weight"] * scorecard["marketing_sales"]["multiplier"]
     funding_val = median_val * scorecard["need_funding"]["weight"] * scorecard["need_funding"]["multiplier"]
     
-    total_val = team_val + opportunity_val + product_val + competition_val + marketing_val + funding_val
+    # Apply scaling to the total
+    total_val = (team_val + opportunity_val + product_val + competition_val + marketing_val + funding_val) * region_factor
     
+    # Scale individual components for consistency
     return {
         "total": total_val,
         "components": {
-            "team_strength": team_val,
-            "opportunity_size": opportunity_val,
-            "product_service": product_val,
-            "competition": competition_val,
-            "marketing_sales": marketing_val,
-            "need_funding": funding_val
+            "team_strength": team_val * region_factor,
+            "opportunity_size": opportunity_val * region_factor,
+            "product_service": product_val * region_factor,
+            "competition": competition_val * region_factor,
+            "marketing_sales": marketing_val * region_factor,
+            "need_funding": funding_val * region_factor
         }
     }
 
@@ -225,6 +250,10 @@ def extract_valuation_params(analysis_text):
     
     # Default values if extraction fails - use deep copy to avoid reference issues
     valuation_data = copy.deepcopy(st.session_state.valuation_data)
+    
+    # Preserve the selected region and region scaling factors
+    region_data = copy.deepcopy(st.session_state.valuation_data["region"])
+    valuation_data["region"] = region_data
     
     # Print a sample of the AI text for debugging
     if st.session_state.get("debug_mode", False):
@@ -499,6 +528,17 @@ def extract_parameters_with_fallback(full_text, valuation_data):
     # Extract checklist scores across the entire text
     # Looking for patterns like "Founders & Team: 75%" or just numbers near key phrases
     
+    # Look for region information
+    region_pattern = r"REGION:?\s*([A-Za-z0-9\s&\(\)/,-]+)"
+    region_match = re.search(region_pattern, full_text)
+    if region_match:
+        region_name = region_match.group(1).strip()
+        # Check if the extracted region is in our predefined list
+        if region_name in valuation_data["region"]["scaling_factors"]:
+            valuation_data["region"]["selected"] = region_name
+            if st.session_state.get("debug_mode", False):
+                st.sidebar.write(f"Found region: {region_name}")
+    
     # More comprehensive checklist parameter patterns
     checklist_params = [
         {
@@ -604,9 +644,7 @@ def extract_parameters_with_fallback(full_text, valuation_data):
             "patterns": [
                 r"Marketing\s*&?\s*Sales:?\s*([\d\.]+)x",
                 r"Marketing\s*&?\s*Sales:?\s*([\d\.]+)\s*times",
-                r"Marketing(?:\s*multiplier)?:?\s*([\d\.]+)",
-                r"Marketing\s*&?\s*Sales(?:\s*multiplier)?:?\s*([\d\.]+)",
-                r"Sales(?:\s*multiplier)?:?\s*([\d\.]+)"
+                r"Marketing\s*&?\s*Sales:?\s*([\d\.]+)"
             ],
             "data_key": "marketing_sales"
         },
@@ -695,6 +733,19 @@ def start_new_evaluation():
                 "competition": {"weight": 0.16, "multiplier": 1.3},
                 "marketing_sales": {"weight": 0.12, "multiplier": 0.9},
                 "need_funding": {"weight": 0.06, "multiplier": 1.0}
+            },
+            # Region settings
+            "region": {
+                "selected": "First World / Developed",
+                "scaling_factors": {
+                    "First World / Developed": 1.0,                # Default multiplier (no adjustment)
+                    "MENA (Middle East & North Africa)": 0.8,      # 20% reduction
+                    "South Asia (India, Pakistan, etc.)": 0.65,    # 35% reduction
+                    "Southeast Asia": 0.7,                         # 30% reduction
+                    "Latin America": 0.75,                         # 25% reduction
+                    "Africa (excl. North Africa)": 0.6,            # 40% reduction
+                    "Eastern Europe": 0.85                         # 15% reduction
+                }
             }
         }
         
@@ -739,6 +790,21 @@ if st.session_state.current_view == "upload":
     st.markdown("""
     This assistant evaluates startup proposals like a venture capitalist. 
     Upload your business plan, pitch deck, financial projections, or team CVs to get feedback and a valuation.
+    """)
+    
+    # Region selector
+    st.subheader("Select Region")
+    region_options = list(st.session_state.valuation_data["region"]["scaling_factors"].keys())
+    selected_region = st.selectbox(
+        "Select the region where the startup operates:",
+        options=region_options,
+        index=region_options.index(st.session_state.valuation_data["region"]["selected"])
+    )
+    st.session_state.valuation_data["region"]["selected"] = selected_region
+    
+    st.markdown(f"""
+    **Region: {selected_region}**  
+    *Valuation estimates will be adjusted according to regional market conditions.*
     """)
     
     # Allow multiple files
@@ -846,9 +912,10 @@ if st.session_state.current_view == "upload":
                 3. Areas for improvement (detailed bullet points/paragraphs)
                 4. Team assessment (including a detailed table of team members if CVs are provided)
                 5. Competitive analysis (with names or descriptions of similar startups)
-                6. Overall score (1-10)
-                7. Final recommendation
-                8. Valuation Criteria Scores (REQUIRED - use this exact format):
+                6. Regional market analysis (specific to the startup's region)
+                7. Overall score (1-10)
+                8. Final recommendation
+                9. Valuation Criteria Scores (REQUIRED - use this exact format):
 
                 VALUATION CRITERIA SCORES:
                 
@@ -858,6 +925,8 @@ if st.session_state.current_view == "upload":
                 - Market Size: [SCORE]% (e.g. 80%)
                 - Product & IP: [SCORE]% (e.g. 70%)
                 - Execution Potential: [SCORE]% (e.g. 60%)
+                
+                REGION: [REGION_NAME]
                 
                 SCORECARD METHOD MULTIPLIERS:
                 - Team Strength: [MULTIPLIER]x (e.g. 1.2x)
@@ -883,9 +952,13 @@ if st.session_state.current_view == "upload":
                 
                 # Show analysis in progress
                 with st.status("Analyzing startup proposal...") as status:
-                    # Build dynamic instructions
-                    instructions = """Please analyze all the uploaded files to provide a comprehensive evaluation of the startup proposal.
+                    # Build dynamic instructions - include region information
+                    region_name = st.session_state.valuation_data["region"]["selected"]
+                    instructions = f"""Please analyze all the uploaded files to provide a comprehensive evaluation of the startup proposal.
                     Use your VC evaluation framework and follow the structure requested in the message.
+                    
+                    IMPORTANT: This startup operates in the {region_name} region. Consider regional market conditions, funding environment, 
+                    and growth expectations in your analysis and valuation.
                     
                     Be specific about the values you assign to each valuation metric and explain your reasoning in detail.
                     
@@ -1016,8 +1089,11 @@ elif st.session_state.current_view == "valuation":
         st.session_state.current_view = "upload"
         st.rerun()
     
-    # Display valuation overview
-    st.markdown("""
+    # Display valuation overview with region information
+    region_name = st.session_state.valuation_data["region"]["selected"]
+    region_factor = st.session_state.valuation_data["region"]["scaling_factors"][region_name]
+    
+    st.markdown(f"""
     ## Valuation Overview
     
     This section provides two different methods to calculate the valuation of the startup:
@@ -1026,20 +1102,44 @@ elif st.session_state.current_view == "valuation":
     2. **Scorecard Method**: Applies premium/discount multipliers to a median industry valuation
     
     The sliders are pre-set with AI-predicted values based on the pitchdeck quality, but you can adjust them.
+    
+    ### Regional Adjustment
+    
+    **Selected Region: {region_name}**  
+    **Regional Scaling Factor: {region_factor:.2f}x** *(valuations are scaled by this factor to account for regional market conditions)*
     """)
             
-    # Add a reset button to restore AI predictions
-    if st.button("Reset to AI-Predicted Values"):
-        # Deep copy to ensure we don't have reference issues
-        import copy
-        st.session_state.valuation_data = copy.deepcopy(st.session_state.ai_predicted_values)
+    # Add controls for region selection and reset to AI values
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Region selector
+        region_options = list(st.session_state.valuation_data["region"]["scaling_factors"].keys())
+        selected_region = st.selectbox(
+            "Select Region:",
+            options=region_options,
+            index=region_options.index(st.session_state.valuation_data["region"]["selected"]),
+            key="valuation_region_selector"
+        )
         
-        # Debug info
-        if st.session_state.get("debug_mode", False):
-            st.sidebar.write("Reset to AI predicted values")
-            st.sidebar.write(f"Founders score: {st.session_state.valuation_data['checklist']['founders_team']['score']:.2f}")
-            st.sidebar.write(f"Team multiplier: {st.session_state.valuation_data['scorecard']['team_strength']['multiplier']:.1f}x")
-        st.rerun()
+        # Update the selected region
+        if selected_region != st.session_state.valuation_data["region"]["selected"]:
+            st.session_state.valuation_data["region"]["selected"] = selected_region
+            st.rerun()
+    
+    with col2:
+        # Add a reset button to restore AI predictions
+        if st.button("Reset to AI-Predicted Values"):
+            # Deep copy to ensure we don't have reference issues
+            import copy
+            st.session_state.valuation_data = copy.deepcopy(st.session_state.ai_predicted_values)
+            
+            # Debug info
+            if st.session_state.get("debug_mode", False):
+                st.sidebar.write("Reset to AI predicted values")
+                st.sidebar.write(f"Founders score: {st.session_state.valuation_data['checklist']['founders_team']['score']:.2f}")
+                st.sidebar.write(f"Team multiplier: {st.session_state.valuation_data['scorecard']['team_strength']['multiplier']:.1f}x")
+            st.rerun()
     
     # Create tabs for the two valuation methods
     tab1, tab2 = st.tabs(["Checklist Method", "Scorecard Method"])
@@ -1412,6 +1512,37 @@ elif st.session_state.current_view == "valuation":
     })
     
     st.bar_chart(comparison_data.set_index('Method'))
+    
+    # Regional scaling factors adjustment section
+    with st.expander("Adjust Regional Scaling Factors"):
+        st.write("These scaling factors adjust valuations based on regional market conditions.")
+        st.write("A factor of 1.0 means no adjustment, while lower values reduce the valuation.")
+        
+        # Store the current factors to check for changes
+        old_factors = st.session_state.valuation_data["region"]["scaling_factors"].copy()
+        new_factors = {}
+        
+        # Create sliders for each region
+        for region, factor in st.session_state.valuation_data["region"]["scaling_factors"].items():
+            new_factors[region] = st.slider(
+                f"{region}",
+                min_value=0.1,
+                max_value=2.0,
+                value=factor,
+                step=0.05,
+                format="%.2fx",
+                key=f"region_factor_{region}"
+            )
+        
+        # Check if any factors changed and update
+        factors_changed = False
+        for region, factor in new_factors.items():
+            if factor != old_factors[region]:
+                factors_changed = True
+        
+        if factors_changed:
+            st.session_state.valuation_data["region"]["scaling_factors"] = new_factors
+            st.warning("Regional scaling factors have been updated. The changes will be reflected in all valuations.")
     
     # Button to view report
     st.button("⬅️ Back to Report", on_click=lambda: setattr(st.session_state, 'current_view', 'report'))
