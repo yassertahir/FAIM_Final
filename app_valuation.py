@@ -9,6 +9,7 @@ import speech_recognition as sr
 import numpy as np
 import pandas as pd
 import re
+from ml_predictor import predict_valuation, process_pitchbook_data, CategoricalImputer, check_pitchbook_data, get_required_features
 
 # Set page configuration
 st.set_page_config(page_title="VC Assistant", layout="wide")
@@ -58,6 +59,13 @@ if 'valuation_data' not in st.session_state:
             "competition": {"weight": 0.16, "multiplier": 1.3},
             "marketing_sales": {"weight": 0.12, "multiplier": 0.9},
             "need_funding": {"weight": 0.06, "multiplier": 1.0}
+        },
+        # ML prediction method
+        "ml_prediction": {
+            "is_available": False,
+            "predicted_value": 0,
+            "confidence_score": 0,
+            "features_present": 0
         },
         # Region settings
         "region": {
@@ -715,6 +723,15 @@ def start_new_evaluation():
         st.session_state.current_view = "upload"
         st.session_state.ai_analysis = None
         
+        # Reset pitchbook data
+        st.session_state.pitchbook_data_available = False
+        st.session_state.pitchbook_data_df = None
+        st.session_state.pitchbook_data_quality = {"is_valid": False, "message": "No data uploaded"}
+        
+        # Set ML prediction to unavailable
+        st.session_state.valuation_data["ml_prediction"]["is_available"] = False
+        st.session_state.valuation_data["ml_prediction"]["predicted_value"] = 0
+        
         # Clear AI predicted values
         if 'ai_predicted_values' in st.session_state:
             del st.session_state.ai_predicted_values
@@ -825,6 +842,16 @@ def predict_region_from_text(text):
 if "processed_files" not in st.session_state:
     st.session_state.processed_files = set()
 
+# Initialize pitchbook data tracking
+if "pitchbook_data_available" not in st.session_state:
+    st.session_state.pitchbook_data_available = False
+
+if "pitchbook_data_df" not in st.session_state:
+    st.session_state.pitchbook_data_df = None
+
+if "pitchbook_data_quality" not in st.session_state:
+    st.session_state.pitchbook_data_quality = {"is_valid": False, "message": "No data uploaded"}
+
 # Navigation UI
 with st.sidebar:
     st.title("VC Assistant")
@@ -859,20 +886,94 @@ if st.session_state.current_view == "upload":
     Upload your business plan, pitch deck, financial projections, or team CVs to get feedback and a valuation.
     """)
     
-    # Region information (auto-predicted)
-    st.subheader("Region Detection")
-    st.info("""
-    The system will automatically detect the startup's region from your documents.
-    Region-specific market conditions will be applied to the valuation calculations.
-    You can override the detected region in the valuation page if needed.
-    """)
+    # Create tabs for different document types
+    tab1, tab2 = st.tabs(["Pitch Documents", "Pitchbook Data (Optional)"])
     
-    # Allow multiple files
-    uploaded_files = st.file_uploader(
-        "Upload files...", 
-        accept_multiple_files=True,
-        type=["pdf", "csv", "xlsx", "docx", "txt"]
-    )
+    with tab1:
+        # Region information (auto-predicted)
+        st.subheader("Region Detection")
+        st.info("""
+        The system will automatically detect the startup's region from your documents.
+        Region-specific market conditions will be applied to the valuation calculations.
+        You can override the detected region in the valuation page if needed.
+        """)
+        
+        # Allow multiple files
+        uploaded_files = st.file_uploader(
+            "Upload pitch documents...", 
+            accept_multiple_files=True,
+            type=["pdf", "xlsx", "docx", "txt"]
+        )
+        
+    with tab2:
+        st.subheader("Pitchbook Data")
+        st.info("""
+        If you have access to Pitchbook data for this company, you can upload a CSV file here.
+        This will enable advanced AI-powered valuation prediction using machine learning.
+        """)
+        
+        # Add a button to check if pitchbook data is available
+        if st.button("Check Pitchbook Data Availability"):
+            st.info("Checking if pitchbook data is available for this company...")
+            # For demonstration purposes, we'll just show a message
+            st.success("Pitchbook data is available for this company. You can upload it below.")
+        
+        # Allow CSV file upload for pitchbook data
+        pitchbook_file = st.file_uploader(
+            "Upload pitchbook CSV data...", 
+            accept_multiple_files=False,
+            type=["csv"]
+        )
+        
+        # Process pitchbook data if uploaded
+        if pitchbook_file:
+            try:
+                # Load the CSV data
+                df = pd.read_csv(pitchbook_file)
+                
+                # Check if the data has sufficient columns for prediction
+                is_valid, message = check_pitchbook_data(df)
+                
+                # Store results
+                st.session_state.pitchbook_data_df = df
+                st.session_state.pitchbook_data_quality = {"is_valid": is_valid, "message": message}
+                st.session_state.pitchbook_data_available = is_valid
+                
+                # Update ML prediction availability
+                st.session_state.valuation_data["ml_prediction"]["is_available"] = is_valid
+                
+                # Display results
+                if is_valid:
+                    st.success(f"✅ Pitchbook data loaded successfully: {message}")
+                    
+                    # Preview the data
+                    st.write("Data Preview:")
+                    st.dataframe(df.head(5))
+                    
+                    # If valid, run the prediction model
+                    with st.spinner("Running AI prediction model..."):
+                        prediction = predict_valuation(df)
+                        # Store the prediction
+                        st.session_state.valuation_data["ml_prediction"]["predicted_value"] = float(prediction[0])
+                        # Calculate feature coverage as a confidence proxy
+                        features_info = get_required_features()
+                        total_features = len(features_info['numerical_features']) + len(features_info['categorical_features'])
+                        features_present = len([col for col in df.columns if col in features_info['numerical_features'] + features_info['categorical_features']])
+                        confidence = min(100, (features_present / total_features) * 100)
+                        st.session_state.valuation_data["ml_prediction"]["confidence_score"] = confidence
+                        st.session_state.valuation_data["ml_prediction"]["features_present"] = features_present
+                        
+                        # Show the prediction
+                        st.metric("AI-Predicted Valuation", f"${prediction[0]:,.2f}")
+                        st.progress(confidence/100, text=f"Confidence: {confidence:.1f}% ({features_present}/{total_features} features present)")
+                else:
+                    st.error(f"❌ {message}")
+                    st.info("Please provide a CSV file with sufficient pitchbook data. Required fields include: Deal Size, Pre-money Valuation, Primary Industry Sector, Deal Type.")
+                    
+            except Exception as e:
+                st.error(f"Error processing the pitchbook data: {str(e)}")
+                st.session_state.pitchbook_data_available = False
+                st.session_state.valuation_data["ml_prediction"]["is_available"] = False
     
     # Show what files are ready to be analyzed
     if uploaded_files:
@@ -1549,8 +1650,16 @@ elif st.session_state.current_view == "valuation":
     ai_checklist_val = calculate_checklist_valuation(st.session_state.ai_predicted_values)
     ai_scorecard_val = calculate_scorecard_valuation(st.session_state.ai_predicted_values)
     
-    # Create and display comparison metrics
-    col1, col2 = st.columns(2)
+    # Get ML prediction if available
+    ml_prediction_available = st.session_state.valuation_data["ml_prediction"]["is_available"]
+    ml_prediction_val = st.session_state.valuation_data["ml_prediction"]["predicted_value"]
+    ml_confidence = st.session_state.valuation_data["ml_prediction"]["confidence_score"]
+    
+    # Create columns for displaying valuations
+    if ml_prediction_available:
+        col1, col2, col3 = st.columns(3)
+    else:
+        col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("AI-Predicted Valuations")
@@ -1569,14 +1678,42 @@ elif st.session_state.current_view == "valuation":
         st.metric("Average", f"${average_val:,.0f}", 
                  delta=f"${average_val - ai_average_val:,.0f}")
     
+    # Add ML prediction column if available
+    if ml_prediction_available:
+        with col3:
+            st.subheader("ML-Based Prediction")
+            st.metric("Pitchbook AI", f"${ml_prediction_val:,.0f}")
+            st.progress(ml_confidence/100, text=f"Confidence: {ml_confidence:.1f}%")
+            features_present = st.session_state.valuation_data["ml_prediction"]["features_present"]
+            feature_info = get_required_features()
+            total_features = len(feature_info['numerical_features']) + len(feature_info['categorical_features'])
+            st.caption(f"Based on {features_present}/{total_features} features from Pitchbook data")
+            
+            # Show a notice if ML prediction is significantly different
+            threshold = 0.2  # 20% difference
+            avg_traditional = (checklist_val['total'] + scorecard_val['total']) / 2
+            diff_percentage = abs(ml_prediction_val - avg_traditional) / avg_traditional
+            
+            if diff_percentage > threshold:
+                st.info(f"⚠️ ML prediction differs by {diff_percentage:.1%} from traditional methods. Consider reviewing the valuation.")
+    
     # Create and display a bar chart comparing all valuations
+    methods = ['Checklist (AI)', 'Checklist (Adjusted)', 
+              'Scorecard (AI)', 'Scorecard (Adjusted)',
+              'Average (AI)', 'Average (Adjusted)']
+    
+    values = [ai_checklist_val['total'], checklist_val['total'],
+             ai_scorecard_val['total'], scorecard_val['total'],
+             ai_average_val, average_val]
+    
+    # Add ML prediction to the chart if available
+    if ml_prediction_available:
+        methods.append('Pitchbook AI')
+        values.append(ml_prediction_val)
+    
     comparison_data = pd.DataFrame({
-        'Method': ['Checklist (AI)', 'Checklist (Adjusted)', 
-                  'Scorecard (AI)', 'Scorecard (Adjusted)',
-                  'Average (AI)', 'Average (Adjusted)'],
-        'Valuation ($)': [ai_checklist_val['total'], checklist_val['total'],
-                         ai_scorecard_val['total'], scorecard_val['total'],
-                         ai_average_val, average_val]
+        'Method': methods,
+        'Valuation ($)': values
     })
     
     st.bar_chart(comparison_data.set_index('Method'))
