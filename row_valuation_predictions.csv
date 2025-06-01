@@ -1,0 +1,5 @@
+Company,Actual,Predicted,Absolute Error,Percentage Error,Deal Type,Industry,Deal Date,Deal Size
+Zilch (Financial Software),507.51,501.10051261778375,6.409487382216241,1.26292829347525,Early Stage VC,Information Technology,2021-07-22,98.96
+Zenjob,133.2,130.46567246791608,2.7343275320839098,2.052798447510443,Later Stage VC,Business Products and Services (B2B),2020-05-12,27.6
+Zilch (Financial Software),1675.07,1509.2745404424968,165.79545955750314,9.897822751138946,Later Stage VC,Information Technology,2022-06-30,154.48
+Zenjob,382.67,428.09403204625494,45.42403204625492,11.870288249994752,Later Stage VC,Business Products and Services (B2B),2022-02-22,45.0
