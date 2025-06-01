@@ -245,14 +245,19 @@ def extract_valuation_params(analysis_text):
     
     This function parses the VALUATION CRITERIA SCORES section in the analysis 
     to extract numerical values for checklist scores and scorecard multipliers.
+    It also predicts the startup's region based on content.
     """
     import copy
     
     # Default values if extraction fails - use deep copy to avoid reference issues
     valuation_data = copy.deepcopy(st.session_state.valuation_data)
     
-    # Preserve the selected region and region scaling factors
+    # Predict region from the analysis text
+    predicted_region = predict_region_from_text(analysis_text)
+    
+    # Update region data with prediction but preserve scaling factors
     region_data = copy.deepcopy(st.session_state.valuation_data["region"])
+    region_data["selected"] = predicted_region
     valuation_data["region"] = region_data
     
     # Print a sample of the AI text for debugging
@@ -528,7 +533,7 @@ def extract_parameters_with_fallback(full_text, valuation_data):
     # Extract checklist scores across the entire text
     # Looking for patterns like "Founders & Team: 75%" or just numbers near key phrases
     
-    # Look for region information
+    # First look for explicit region information
     region_pattern = r"REGION:?\s*([A-Za-z0-9\s&\(\)/,-]+)"
     region_match = re.search(region_pattern, full_text)
     if region_match:
@@ -537,7 +542,8 @@ def extract_parameters_with_fallback(full_text, valuation_data):
         if region_name in valuation_data["region"]["scaling_factors"]:
             valuation_data["region"]["selected"] = region_name
             if st.session_state.get("debug_mode", False):
-                st.sidebar.write(f"Found region: {region_name}")
+                st.sidebar.write(f"Found explicit region declaration: {region_name}")
+    # If no explicit region found, keep the predicted region that was already set
     
     # More comprehensive checklist parameter patterns
     checklist_params = [
@@ -754,6 +760,67 @@ def start_new_evaluation():
     except Exception as e:
         st.error(f"Error starting new evaluation: {e}")
 
+# Function to predict region from text content
+def predict_region_from_text(text):
+    """
+    Predicts the startup's region based on text content analysis.
+    Uses keyword matching to identify region-specific references.
+    """
+    # Dictionary of regions and their associated keywords
+    region_keywords = {
+        "MENA (Middle East & North Africa)": [
+            "mena", "middle east", "north africa", "dubai", "egypt", "uae", "saudi", 
+            "qatar", "bahrain", "kuwait", "oman", "morocco", "tunisia", "algeria", 
+            "jordan", "lebanon", "riyadh", "cairo", "gcc"
+        ],
+        "South Asia (India, Pakistan, etc.)": [
+            "india", "pakistan", "bangladesh", "sri lanka", "nepal", "mumbai", 
+            "delhi", "karachi", "bangalore", "hyderabad", "lahore", "kolkata", "chennai"
+        ],
+        "Southeast Asia": [
+            "southeast asia", "singapore", "malaysia", "indonesia", "thailand", 
+            "philippines", "vietnam", "bangkok", "jakarta", "manila", "kuala lumpur", 
+            "hanoi", "asean"
+        ],
+        "Latin America": [
+            "latin america", "brazil", "mexico", "argentina", "chile", "colombia", 
+            "peru", "sao paulo", "buenos aires", "mexico city", "santiago", "bogota", "lima"
+        ],
+        "Africa (excl. North Africa)": [
+            "africa", "sub-saharan", "nigeria", "kenya", "south africa", "ghana", 
+            "ethiopia", "tanzania", "lagos", "nairobi", "johannesburg", "accra", 
+            "addis ababa"
+        ],
+        "Eastern Europe": [
+            "eastern europe", "russia", "poland", "ukraine", "romania", "czech", 
+            "hungary", "bulgaria", "moscow", "warsaw", "kyiv", "prague"
+        ]
+    }
+    
+    text = text.lower()
+    
+    # Count mentions of each region's keywords
+    region_counts = {region: 0 for region in region_keywords}
+    for region, keywords in region_keywords.items():
+        for keyword in keywords:
+            count = text.count(keyword)
+            region_counts[region] += count
+    
+    # Find the region with the most keyword mentions
+    max_count = 0
+    predicted_region = "First World / Developed"  # Default
+    
+    for region, count in region_counts.items():
+        if count > max_count:
+            max_count = count
+            predicted_region = region
+    
+    # Only return a specific region if we have enough evidence (at least 3 mentions)
+    if max_count >= 3:
+        return predicted_region
+    else:
+        return "First World / Developed"  # Default to developed if insufficient evidence
+
 # Create a set for processed files
 if "processed_files" not in st.session_state:
     st.session_state.processed_files = set()
@@ -792,19 +859,12 @@ if st.session_state.current_view == "upload":
     Upload your business plan, pitch deck, financial projections, or team CVs to get feedback and a valuation.
     """)
     
-    # Region selector
-    st.subheader("Select Region")
-    region_options = list(st.session_state.valuation_data["region"]["scaling_factors"].keys())
-    selected_region = st.selectbox(
-        "Select the region where the startup operates:",
-        options=region_options,
-        index=region_options.index(st.session_state.valuation_data["region"]["selected"])
-    )
-    st.session_state.valuation_data["region"]["selected"] = selected_region
-    
-    st.markdown(f"""
-    **Region: {selected_region}**  
-    *Valuation estimates will be adjusted according to regional market conditions.*
+    # Region information (auto-predicted)
+    st.subheader("Region Detection")
+    st.info("""
+    The system will automatically detect the startup's region from your documents.
+    Region-specific market conditions will be applied to the valuation calculations.
+    You can override the detected region in the valuation page if needed.
     """)
     
     # Allow multiple files
@@ -905,6 +965,8 @@ if st.session_state.current_view == "upload":
                 message_text = f"""I've uploaded {len(file_ids)} files for analysis: {', '.join(file_names)}. 
                 Please analyze all files together for a comprehensive evaluation of this startup.
 
+                IMPORTANT: Identify the geographic region where this startup operates (e.g., MENA, South Asia, Southeast Asia, Latin America, Africa, Eastern Europe, or First World/Developed).
+
                 Follow the structure below and ensure your bullet points are expanded and thoroughly explained:
 
                 1. Summary of the proposal
@@ -912,7 +974,7 @@ if st.session_state.current_view == "upload":
                 3. Areas for improvement (detailed bullet points/paragraphs)
                 4. Team assessment (including a detailed table of team members if CVs are provided)
                 5. Competitive analysis (with names or descriptions of similar startups)
-                6. Regional market analysis (specific to the startup's region)
+                6. Regional market analysis (clearly specify which region the startup operates in)
                 7. Overall score (1-10)
                 8. Final recommendation
                 9. Valuation Criteria Scores (REQUIRED - use this exact format):
@@ -952,13 +1014,16 @@ if st.session_state.current_view == "upload":
                 
                 # Show analysis in progress
                 with st.status("Analyzing startup proposal...") as status:
-                    # Build dynamic instructions - include region information
-                    region_name = st.session_state.valuation_data["region"]["selected"]
-                    instructions = f"""Please analyze all the uploaded files to provide a comprehensive evaluation of the startup proposal.
+                    # Build dynamic instructions with region detection
+                    instructions = """Please analyze all the uploaded files to provide a comprehensive evaluation of the startup proposal.
                     Use your VC evaluation framework and follow the structure requested in the message.
                     
-                    IMPORTANT: This startup operates in the {region_name} region. Consider regional market conditions, funding environment, 
-                    and growth expectations in your analysis and valuation.
+                    IMPORTANT: Identify which geographic region this startup operates in based on the documents (MENA, South Asia, 
+                    Southeast Asia, Latin America, Africa, Eastern Europe, or First World/Developed). This detection 
+                    is critical as it will affect the valuation calculation. Include this determination in your analysis.
+                    
+                    In the Regional Market Analysis section, explicitly state which region the startup operates in 
+                    and explain the evidence for this determination.
                     
                     Be specific about the values you assign to each valuation metric and explain your reasoning in detail.
                     
@@ -1105,8 +1170,10 @@ elif st.session_state.current_view == "valuation":
     
     ### Regional Adjustment
     
-    **Selected Region: {region_name}**  
+    **Auto-Detected Region: {region_name}**  
     **Regional Scaling Factor: {region_factor:.2f}x** *(valuations are scaled by this factor to account for regional market conditions)*
+    
+    *The region was automatically detected from your documents. You can change it below if needed.*
     """)
             
     # Add controls for region selection and reset to AI values
@@ -1132,6 +1199,7 @@ elif st.session_state.current_view == "valuation":
         if st.button("Reset to AI-Predicted Values"):
             # Deep copy to ensure we don't have reference issues
             import copy
+            current_region = st.session_state.valuation_data["region"]["selected"]
             st.session_state.valuation_data = copy.deepcopy(st.session_state.ai_predicted_values)
             
             # Debug info
