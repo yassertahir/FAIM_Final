@@ -82,6 +82,33 @@ if 'valuation_data' not in st.session_state:
         }
     }
 
+
+# Add this helper function to format currency values in millions
+def format_in_millions(value):
+    """Format currency values in millions."""
+    # The value is already in millions, so just format it
+    return f"${value:.2f} million"
+
+# Add this to calculate region-adjusted ML prediction
+def calculate_ml_prediction_with_region(valuation_data):
+    """Calculate ML prediction with regional adjustment applied"""
+    # Get the base prediction (already in millions)
+    base_prediction = valuation_data["ml_prediction"]["predicted_value"]
+    
+    # Get the regional scaling factor
+    region_name = valuation_data["region"]["selected"]
+    region_factor = valuation_data["region"]["scaling_factors"][region_name]
+    
+    # Apply regional scaling
+    adjusted_prediction = base_prediction * region_factor
+    
+    return {
+        "base": base_prediction,
+        "adjusted": adjusted_prediction,
+        "region_name": region_name,
+        "region_factor": region_factor
+    }
+
 # Function to load or create assistant and thread
 def get_or_create_assistant_and_thread():
     # Default values
@@ -1278,7 +1305,7 @@ elif st.session_state.current_view == "report":
                     st.info("📊 Machine Learning Valuation Active: This startup has been valued using our advanced machine learning model trained on Pitchbook data. The traditional checklist and scorecard valuation methods have been bypassed in favor of this more data-driven approach.")
                     
                 with col2:
-                    st.metric("ML-Predicted Valuation", f"${ml_prediction_val:,.0f}")
+                    st.metric("ML-Predicted Valuation", format_in_millions(ml_prediction_val))
                     st.progress(ml_confidence/100, text=f"Confidence: {ml_confidence:.1f}%")
                 
                 feature_info = get_required_features()
@@ -1447,7 +1474,7 @@ elif st.session_state.current_view == "valuation":
         ml_confidence = st.session_state.valuation_data["ml_prediction"]["confidence_score"]
         features_present = st.session_state.valuation_data["ml_prediction"]["features_present"]
         
-        st.metric("ML-Predicted Valuation", f"${ml_prediction_val:,.0f}")
+        st.metric("ML-Predicted Valuation", format_in_millions(ml_prediction_val))
         st.progress(ml_confidence/100, text=f"Confidence: {ml_confidence:.1f}%")
         
         feature_info = get_required_features()
@@ -1806,7 +1833,13 @@ elif st.session_state.current_view == "valuation":
     # Show different views based on whether ML prediction is available
     if ml_prediction_available:
         # Display just the ML prediction with detailed information
-        ml_prediction_val = st.session_state.valuation_data["ml_prediction"]["predicted_value"]
+        ml_prediction_details = calculate_ml_prediction_with_region(st.session_state.valuation_data)
+        ml_prediction_base = ml_prediction_details["base"]
+        ml_prediction_adjusted = ml_prediction_details["adjusted"]
+        region_name = ml_prediction_details["region_name"]
+        region_factor = ml_prediction_details["region_factor"]
+        
+        # Get confidence metrics
         ml_confidence = st.session_state.valuation_data["ml_prediction"]["confidence_score"]
         features_present = st.session_state.valuation_data["ml_prediction"]["features_present"]
         feature_info = get_required_features()
@@ -1831,7 +1864,11 @@ elif st.session_state.current_view == "valuation":
             """)
         
         with col2:
-            st.metric("ML-Predicted Valuation", f"${ml_prediction_val:,.0f}")
+            # Show both base and adjusted valuations
+            st.metric("Base ML Valuation", format_in_millions(ml_prediction_base))
+            st.metric("Region-Adjusted Valuation", 
+                    format_in_millions(ml_prediction_adjusted),
+                    delta=f"{'+' if region_factor > 1 else ''}{(region_factor - 1) * 100:.0f}%")
             st.progress(ml_confidence/100, text=f"Confidence: {ml_confidence:.1f}%")
             
     else:
@@ -1876,24 +1913,25 @@ elif st.session_state.current_view == "valuation":
                 st.info(f"⚠️ ML prediction differs by {diff_percentage:.1%} from traditional methods. Consider reviewing the valuation.")
     
     # Create and display a bar chart for valuations
-    if ml_prediction_available:
-        # When ML prediction is available, just show that
-        methods = ['ML Prediction (Pitchbook AI)']
-        values = [ml_prediction_val]
+    # if ml_prediction_available:
+    #     # When ML prediction is available, just show that
+    #     methods = ['ML Prediction (Pitchbook AI)']
+    #     values = [ml_prediction_val]  # Value is already in millions
         
-        # Add reference to average regional valuation for context
-        region_name = st.session_state.valuation_data["region"]["selected"]
-        region_factor = st.session_state.valuation_data["region"]["scaling_factors"][region_name]
-        regional_avg = st.session_state.valuation_data["scorecard"]["median_valuation"] * region_factor
+    #     # Add reference to average regional valuation for context
+    #     region_name = st.session_state.valuation_data["region"]["selected"]
+    #     region_factor = st.session_state.valuation_data["region"]["scaling_factors"][region_name]
+    #     regional_avg = st.session_state.valuation_data["scorecard"]["median_valuation"] * region_factor / 1000000  # Convert to millions
         
-        methods.append(f'Regional Avg ({region_name})')
-        values.append(regional_avg)
+    #     methods.append(f'Regional Avg ({region_name})')
+    #     values.append(regional_avg)
         
-        comparison_data = pd.DataFrame({
-            'Method': methods,
-            'Valuation ($)': values
-        })
-    else:
+    #     comparison_data = pd.DataFrame({
+    #         'Method': methods,
+    #         'Valuation ($ millions)': values  # Updated label to indicate millions
+    #     })
+    # else:
+    if not ml_prediction_available:
         # When using traditional methods, show all valuation approaches
         methods = ['Checklist (AI)', 'Checklist (Adjusted)', 
                   'Scorecard (AI)', 'Scorecard (Adjusted)',
@@ -1908,7 +1946,7 @@ elif st.session_state.current_view == "valuation":
             'Valuation ($)': values
         })
     
-    st.bar_chart(comparison_data.set_index('Method'))
+        st.bar_chart(comparison_data.set_index('Method'))
     
     # Regional scaling factors adjustment section
     with st.expander("Adjust Regional Scaling Factors"):
