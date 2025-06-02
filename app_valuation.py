@@ -1905,13 +1905,20 @@ elif st.session_state.current_view == "valuation":
             """
             
             # Show a notice if ML prediction is significantly different
-            threshold = 0.2  # 20% difference
-            avg_traditional = (checklist_val['total'] + scorecard_val['total']) / 2
-            diff_percentage = abs(ml_prediction_val - avg_traditional) / avg_traditional
-            
-            if diff_percentage > threshold:
-                st.info(f"⚠️ ML prediction differs by {diff_percentage:.1%} from traditional methods. Consider reviewing the valuation.")
-    
+            if 'ml_prediction' in st.session_state.valuation_data and st.session_state.valuation_data['ml_prediction'].get('is_available'):
+                # Get ML prediction value
+                ml_prediction_val = st.session_state.valuation_data['ml_prediction']['predicted_value']
+                
+                # Show a notice if ML prediction is significantly different
+                threshold = 0.2  # 20% difference
+                avg_traditional = (checklist_val['total'] + scorecard_val['total']) / 2
+                
+                # Convert ML prediction to same scale as traditional methods (from millions to full value)
+                ml_prediction_full = ml_prediction_val * 1000000
+                diff_percentage = abs(ml_prediction_full - avg_traditional) / avg_traditional
+                
+                if diff_percentage > threshold:
+                    st.info(f"⚠️ ML prediction (${ml_prediction_val:.2f}M) differs by {diff_percentage:.1%} from traditional methods. Consider reviewing the valuation.")
     # Create and display a bar chart for valuations
     # if ml_prediction_available:
     #     # When ML prediction is available, just show that
