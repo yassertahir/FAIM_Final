@@ -1,5 +1,5 @@
-Company,Actual,Predicted,Absolute Error,Percentage Error,Deal Type,Industry,Deal Date,Deal Size
-Zenjob,133.2,132.61840034619496,0.5815996538050285,0.436636376730502,Later Stage VC,Business Products and Services (B2B),2020-05-12,27.6
-Zenjob,382.67,362.9710392967728,19.698960703227215,5.147767189282466,Later Stage VC,Business Products and Services (B2B),2022-02-22,45.0
-Zilch (Financial Software),507.51,563.259284456706,55.74928445670605,10.984864230597633,Early Stage VC,Information Technology,2021-07-22,98.96
-Zilch (Financial Software),1675.07,1435.82801407246,239.24198592753987,14.28250675658569,Later Stage VC,Information Technology,2022-06-30,154.48
+Company,Actual,Predicted,Absolute Error,Percentage Error,Deal Type,Primary Industry Sector,Deal Date,Deal Size,VC Round
+Zenjob,133.2,133.57492535113667,0.3749253511366817,0.28147548884135265,Later Stage VC,Business Products and Services (B2B),2020-05-12,27.6,4th Round
+Zilch (Financial Software),507.51,469.53769206491205,37.97230793508794,7.482080734387093,Early Stage VC,Information Technology,2021-07-22,98.96,2nd Round
+Zenjob,382.67,346.4515715936726,36.218428406327405,9.464663654409126,Later Stage VC,Business Products and Services (B2B),2022-02-22,45.0,5th Round
+Zilch (Financial Software),1675.07,1366.8772172832632,308.1927827167367,18.398800212333615,Later Stage VC,Information Technology,2022-06-30,154.48,3rd Round

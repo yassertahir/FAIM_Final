@@ -1890,16 +1890,27 @@ elif st.session_state.current_view == "valuation":
             st.metric("Scorecard Method", f"${ai_scorecard_val['total']:,.0f}")
             ai_average_val = (ai_checklist_val['total'] + ai_scorecard_val['total']) / 2
             st.metric("Average", f"${ai_average_val:,.0f}")
-        
+
         with col2:
             st.subheader("Your Adjusted Valuations")
-            st.metric("Checklist Method", f"${checklist_val['total']:,.0f}", 
-                    delta=f"${checklist_val['total'] - ai_checklist_val['total']:,.0f}")
-            st.metric("Scorecard Method", f"${scorecard_val['total']:,.0f}",
-                    delta=f"${scorecard_val['total'] - ai_scorecard_val['total']:,.0f}")
+            # Calculate actual differences
+            checklist_diff = checklist_val['total'] - ai_checklist_val['total']
+            scorecard_diff = scorecard_val['total'] - ai_scorecard_val['total']
+            
+            # Calculate the average valuation (this was missing)
             average_val = (checklist_val['total'] + scorecard_val['total']) / 2
+            average_diff = average_val - ai_average_val
+            
+            # Pass the numerical difference to delta, and format it separately
+            st.metric("Checklist Method", f"${checklist_val['total']:,.0f}", 
+                    delta=checklist_diff, delta_color="normal", 
+                    help="Difference from AI prediction")
+            st.metric("Scorecard Method", f"${scorecard_val['total']:,.0f}",
+                    delta=scorecard_diff, delta_color="normal",
+                    help="Difference from AI prediction")
             st.metric("Average", f"${average_val:,.0f}", 
-                    delta=f"${average_val - ai_average_val:,.0f}") 
+                    delta=average_diff, delta_color="normal",
+                    help="Difference from AI prediction")
             """It's typically more accurate than traditional methods since it's based on actual market data 
             rather than subjective assessments.
             """
