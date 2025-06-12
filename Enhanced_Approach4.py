@@ -144,6 +144,16 @@ def mean_absolute_percentage_error(y_true, y_pred):
     mape = np.mean(np.abs((y_true_valid - y_pred_valid) / y_true_valid)) * 100
     return mape
 
+# Function to format dollar values for plot ticks
+def format_dollars(x, pos):
+    """Format axis labels as dollar values."""
+    if x >= 1e9:
+        return '${:.1f}B'.format(x / 1e9)
+    elif x >= 1e6:
+        return '${:.1f}M'.format(x / 1e6)
+    else:
+        return '${:.0f}K'.format(x / 1e3)
+
 # Function to calculate Median Absolute Percentage Error (MdAPE) - more robust to outliers than MAPE
 def median_absolute_percentage_error(y_true, y_pred):
     y_true, y_pred = np.array(y_true), np.array(y_pred)
@@ -580,8 +590,8 @@ def enhance_approach4():
             'Random Forest': RandomForestRegressor(random_state=42, n_estimators=100),
             'Gradient Boosting': GradientBoostingRegressor(random_state=42),
             'Extra Trees': ExtraTreesRegressor(random_state=42),
-            'Huber Regressor': HuberRegressor(epsilon=1.35, max_iter=1000),  # More robust to outliers
-            'Ridge': Ridge(alpha=1.0, random_state=42)
+            # 'Huber Regressor': HuberRegressor(epsilon=1.35, max_iter=1000),  # More robust to outliers
+            # 'Ridge': Ridge(alpha=1.0, random_state=42)
         }
         
         # Create results DataFrame to store model performance
@@ -869,8 +879,243 @@ def enhance_approach4():
         print(f"\nEnhanced Approach 4 model saved to {model_filename}")
         print(f"Feature information saved to {feature_filename}")
         
-        # 8. Create a prediction function for new companies
-        print("\n8. Creating prediction function for new company data...")
+        # 8. Additional Visualizations
+        print("\n8. Creating additional visualizations for analysis...")
+        
+        # 8.1 Simple Actual vs. Predicted (without early/late round distinction)
+        plt.figure(figsize=(14, 10))
+        
+        # Create a scatter plot without distinguishing by early rounds
+        plt.scatter(pred_df['Actual'], pred_df['Predicted'], alpha=0.7, s=80, color='#1f77b4')
+        
+        # Add a perfect prediction line
+        max_val = max(max(pred_df['Actual']), max(pred_df['Predicted']))
+        min_val = min(min(pred_df['Actual']), min(pred_df['Predicted']))
+        plt.plot([min_val, max_val], [min_val, max_val], 'r--', label='Perfect Prediction', linewidth=2)
+        
+        # Add +/- 20% error bands
+        plt.plot([min_val, max_val], [min_val*1.2, max_val*1.2], 'k:', linewidth=1, alpha=0.5, label='+20% Error')
+        plt.plot([min_val, max_val], [min_val*0.8, max_val*0.8], 'k:', linewidth=1, alpha=0.5, label='-20% Error')
+        
+        # Calculate overall MAPE
+        overall_mape = pred_df['Percentage Error'].mean()
+        
+        # Add title and labels with MAPE information
+        plt.title(f'Actual vs. Predicted IPO Valuations\nMean Absolute Percentage Error: {overall_mape:.2f}%', fontsize=18)
+        plt.xlabel('Actual Valuation')
+        plt.ylabel('Predicted Valuation')
+        
+        # Use log scale for better visualization
+        plt.xscale('log')
+        plt.yscale('log')
+        
+        # Format tick labels with dollar signs
+        from matplotlib.ticker import FuncFormatter
+        plt.gca().xaxis.set_major_formatter(FuncFormatter(format_dollars))
+        plt.gca().yaxis.set_major_formatter(FuncFormatter(format_dollars))
+        
+        # Add company names as annotations for a few notable points
+        # Find the 5 largest absolute errors
+        largest_errors = pred_df.nlargest(5, 'Absolute Error')
+        for _, row in largest_errors.iterrows():
+            plt.annotate(row['Company'], 
+                         (row['Actual'], row['Predicted']),
+                         xytext=(5, 5),
+                         textcoords='offset points',
+                         fontsize=10,
+                         arrowprops=dict(arrowstyle='->', color='#2c3e50', lw=0.5))
+        
+        # Add grid and legend
+        plt.grid(True, which="both", ls="-", alpha=0.2)
+        plt.legend(fontsize=12)
+        plt.tight_layout()
+        plt.savefig('approach4_actual_vs_predicted_simple.png')
+        plt.show()
+        
+        # 8.2 Sector-level Distribution and Performance
+        if 'Primary Industry Sector' in pred_df.columns:
+            print("\n- Creating sector-level analysis...")
+            
+            # Filter out sectors with very few companies
+            sectors_count = pred_df['Primary Industry Sector'].value_counts()
+            valid_sectors = sectors_count[sectors_count >= 2].index
+            
+            # Filter prediction dataframe to include only sectors with sufficient data
+            sector_df = pred_df[pred_df['Primary Industry Sector'].isin(valid_sectors)].copy()
+            
+            # Calculate MAPE by sector
+            sector_mape = sector_df.groupby('Primary Industry Sector').apply(
+                lambda x: x['Percentage Error'].mean()
+            ).sort_values()
+            
+            # Calculate company count by sector
+            sector_count = sector_df['Primary Industry Sector'].value_counts()
+            
+            # Create a DataFrame for plotting
+            sector_plot_df = pd.DataFrame({
+                'MAPE': sector_mape,
+                'Count': sector_count
+            })
+            
+            # Plot MAPE by sector
+            plt.figure(figsize=(14, 10))
+            
+            # Create the bar chart
+            bars = plt.bar(sector_plot_df.index, sector_plot_df['MAPE'], color='#3498db')
+            
+            # Add count labels on top of each bar
+            for i, (sector, row) in enumerate(sector_plot_df.iterrows()):
+                plt.text(i, row['MAPE'] + 2, f"n={row['Count']}", 
+                         ha='center', va='bottom', fontsize=10, color='#2c3e50')
+            
+            # Add title and labels
+            plt.title('Mean Absolute Percentage Error by Industry Sector', fontsize=18)
+            plt.ylabel('MAPE (%)')
+            plt.xticks(rotation=45, ha='right')
+            plt.grid(axis='y', alpha=0.3)
+            
+            # Add horizontal line for overall MAPE
+            plt.axhline(y=overall_mape, linestyle='--', color='#e74c3c', 
+                      label=f'Overall MAPE: {overall_mape:.2f}%')
+            plt.legend()
+            
+            # Adjust layout and save
+            plt.tight_layout()
+            plt.savefig('approach4_mape_by_sector.png')
+            plt.show()
+            
+            # Create a pie chart showing distribution of companies by sector
+            plt.figure(figsize=(12, 12))
+            sector_counts = pred_df['Primary Industry Sector'].value_counts()
+            
+            # Keep only top sectors and group the rest as "Other"
+            top_n = 8
+            if len(sector_counts) > top_n:
+                other_count = sector_counts.iloc[top_n:].sum()
+                sector_counts = sector_counts.iloc[:top_n]
+                sector_counts['Other Sectors'] = other_count
+            
+            # Generate pleasant colors for the pie chart
+            colors = sns.color_palette('Paired', len(sector_counts))
+            
+            # Plot pie chart
+            plt.pie(sector_counts, labels=sector_counts.index, autopct='%1.1f%%', startangle=90, 
+                    colors=colors, shadow=False, wedgeprops={'edgecolor': 'w', 'linewidth': 1})
+            plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
+            plt.title('Distribution of Companies by Industry Sector', fontsize=18)
+            
+            # Save the figure
+            plt.savefig('approach4_sector_distribution.png')
+            plt.show()
+        
+        # 8.3 Error Profile with Median Error Marked
+        print("\n- Creating error distribution analysis...")
+        
+        # Calculate statistics for the error distribution
+        error_stats = {
+            'Mean Error': pred_df['Percentage Error'].mean(),
+            'Median Error': pred_df['Percentage Error'].median(),
+            'Min Error': pred_df['Percentage Error'].min(),
+            'Max Error': pred_df['Percentage Error'].max(),
+            'Std Dev': pred_df['Percentage Error'].std()
+        }
+        
+        print("\nError Statistics:")
+        for stat, value in error_stats.items():
+            print(f"{stat}: {value:.2f}%")
+        
+        # Create histogram of percentage errors
+        plt.figure(figsize=(14, 8))
+        
+        # Plot the histogram
+        sns.histplot(pred_df['Percentage Error'], bins=30, kde=True, color='#3498db')
+        
+        # Add vertical lines for mean and median
+        plt.axvline(x=error_stats['Mean Error'], color='#e74c3c', linestyle='--', 
+                    linewidth=2, label=f"Mean: {error_stats['Mean Error']:.2f}%")
+        plt.axvline(x=error_stats['Median Error'], color='#2ecc71', linestyle='-', 
+                    linewidth=2, label=f"Median: {error_stats['Median Error']:.2f}%")
+        
+        # Add title and labels
+        plt.title('Distribution of Percentage Errors', fontsize=18)
+        plt.xlabel('Percentage Error (%)')
+        plt.ylabel('Count')
+        plt.legend(fontsize=12)
+        
+        # Add grid
+        plt.grid(axis='y', alpha=0.3)
+        plt.tight_layout()
+        plt.savefig('approach4_error_distribution.png')
+        plt.show()
+        
+        # Create a box plot of percentage errors
+        plt.figure(figsize=(12, 6))
+        
+        # Create the box plot
+        sns.boxplot(x=pred_df['Percentage Error'], color='#3498db')
+        
+        # Add vertical line for median
+        plt.axvline(x=error_stats['Median Error'], color='#2ecc71', linestyle='-', 
+                    linewidth=2, label=f"Median: {error_stats['Median Error']:.2f}%")
+        
+        # Add title and labels
+        plt.title('Box Plot of Percentage Errors', fontsize=18)
+        plt.xlabel('Percentage Error (%)')
+        plt.legend(fontsize=12)
+        
+        # Adjust x-axis limits for better visibility
+        plt.xlim(0, min(300, error_stats['Max Error']*1.1))  # Cap at 300% or slightly above max error
+        
+        plt.grid(axis='y', alpha=0.3)
+        plt.tight_layout()
+        plt.savefig('approach4_error_boxplot.png')
+        plt.show()
+        
+        # 8.4 Data Filtering Analysis
+        print("\n- Analyzing data filtering effects on company counts...")
+        
+        # Get filtering statistics
+        original_companies = df['Companies'].nunique()
+        after_target_filter = valid_data['Companies'].nunique()
+        # Use IPO mask to get the IPO companies count
+        ipo_mask = valid_data['Deal Type'] == "IPO"
+        ipo_companies = valid_data[ipo_mask]['Companies'].nunique()
+        predicted_companies = len(pred_df['Company'].unique())
+        
+        # Create a simple bar chart showing company counts at each stage
+        stages = ['Original Dataset', 'Valid Target', 'IPO Companies', 'Final Predictions']
+        counts = [original_companies, after_target_filter, ipo_companies, predicted_companies]
+        
+        plt.figure(figsize=(12, 8))
+        bars = plt.bar(stages, counts, color=['#3498db', '#2ecc71', '#e74c3c', '#f39c12'])
+        
+        # Add count labels on top of each bar
+        for bar in bars:
+            height = bar.get_height()
+            plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                    f'{int(height)}', ha='center', va='bottom', fontsize=12)
+        
+        # Add title and labels
+        plt.title('Number of Unique Companies at Each Stage of Data Processing', fontsize=18)
+        plt.ylabel('Number of Companies')
+        plt.grid(axis='y', alpha=0.3)
+        
+        # Calculate and display percentage retained at each stage
+        for i, (stage, count) in enumerate(zip(stages[1:], counts[1:])):
+            pct = (count / original_companies) * 100
+            plt.text(i+1, count/2, f'{pct:.1f}% of original', 
+                    ha='center', va='center', fontsize=10, color='white', fontweight='bold')
+        
+        plt.tight_layout()
+        plt.savefig('approach4_company_count_by_stage.png')
+        plt.show()
+        
+        # Save the prediction results for future reference
+        pred_df.to_csv('approach4_predictions.csv', index=False)
+        print("\nPrediction results saved to approach4_predictions.csv")
+        
+        # 9. Create a prediction function for new company data...
+        print("\n9. Creating prediction function for new company data...")
         
         def predict_ipo_valuation(new_data):
             """Predict IPO valuation for a new company using the enhanced model.
@@ -953,14 +1198,238 @@ def enhance_approach4():
         print(f"Performance: MAPE = {best_model_mape:.2f}%")
         print(f"Model saved to: {model_filename}")
         
-        return final_pipeline, feature_info
+        # 8. Additional Visualizations
+        print("\n8. Creating additional visualizations for analysis...")
         
-    else:
-        missing_cols = []
-        if 'Deal Type' not in enhanced_data.columns:
-            missing_cols.append('Deal Type')
-        print(f"Warning: {', '.join(missing_cols)} column(s) not found. Cannot create the train-test split.")
-        return None, None
-
-if __name__ == "__main__":
-    enhance_approach4()
+        # 8.1 Simple Actual vs. Predicted (without early/late round distinction)
+        plt.figure(figsize=(14, 10))
+        
+        # Create a scatter plot without distinguishing by early rounds
+        plt.scatter(pred_df['Actual'], pred_df['Predicted'], alpha=0.7, s=80, color='#1f77b4')
+        
+        # Add a perfect prediction line
+        max_val = max(max(pred_df['Actual']), max(pred_df['Predicted']))
+        min_val = min(min(pred_df['Actual']), min(pred_df['Predicted']))
+        plt.plot([min_val, max_val], [min_val, max_val], 'r--', label='Perfect Prediction', linewidth=2)
+        
+        # Add +/- 20% error bands
+        plt.plot([min_val, max_val], [min_val*1.2, max_val*1.2], 'k:', linewidth=1, alpha=0.5, label='+20% Error')
+        plt.plot([min_val, max_val], [min_val*0.8, max_val*0.8], 'k:', linewidth=1, alpha=0.5, label='-20% Error')
+        
+        # Calculate overall MAPE
+        overall_mape = pred_df['Percentage Error'].mean()
+        
+        # Add title and labels with MAPE information
+        plt.title(f'Actual vs. Predicted IPO Valuations\nMean Absolute Percentage Error: {overall_mape:.2f}%', fontsize=18)
+        plt.xlabel('Actual Valuation')
+        plt.ylabel('Predicted Valuation')
+        
+        # Use log scale for better visualization
+        plt.xscale('log')
+        plt.yscale('log')
+        
+        # Format tick labels with dollar signs
+        from matplotlib.ticker import FuncFormatter
+        plt.gca().xaxis.set_major_formatter(FuncFormatter(format_dollars))
+        plt.gca().yaxis.set_major_formatter(FuncFormatter(format_dollars))
+        
+        # Add company names as annotations for a few notable points
+        # Find the 5 largest absolute errors
+        largest_errors = pred_df.nlargest(5, 'Absolute Error')
+        for _, row in largest_errors.iterrows():
+            plt.annotate(row['Company'], 
+                         (row['Actual'], row['Predicted']),
+                         xytext=(5, 5),
+                         textcoords='offset points',
+                         fontsize=10,
+                         arrowprops=dict(arrowstyle='->', color='#2c3e50', lw=0.5))
+        
+        # Add grid and legend
+        plt.grid(True, which="both", ls="-", alpha=0.2)
+        plt.legend(fontsize=12)
+        plt.tight_layout()
+        plt.savefig('approach4_actual_vs_predicted_simple.png')
+        plt.show()
+        
+        # 8.2 Sector-level Distribution and Performance
+        if 'Primary Industry Sector' in pred_df.columns:
+            print("\n- Creating sector-level analysis...")
+            
+            # Filter out sectors with very few companies
+            sectors_count = pred_df['Primary Industry Sector'].value_counts()
+            valid_sectors = sectors_count[sectors_count >= 2].index
+            
+            # Filter prediction dataframe to include only sectors with sufficient data
+            sector_df = pred_df[pred_df['Primary Industry Sector'].isin(valid_sectors)].copy()
+            
+            # Calculate MAPE by sector
+            sector_mape = sector_df.groupby('Primary Industry Sector').apply(
+                lambda x: x['Percentage Error'].mean()
+            ).sort_values()
+            
+            # Calculate company count by sector
+            sector_count = sector_df['Primary Industry Sector'].value_counts()
+            
+            # Create a DataFrame for plotting
+            sector_plot_df = pd.DataFrame({
+                'MAPE': sector_mape,
+                'Count': sector_count
+            })
+            
+            # Plot MAPE by sector
+            plt.figure(figsize=(14, 10))
+            
+            # Create the bar chart
+            bars = plt.bar(sector_plot_df.index, sector_plot_df['MAPE'], color='#3498db')
+            
+            # Add count labels on top of each bar
+            for i, (sector, row) in enumerate(sector_plot_df.iterrows()):
+                plt.text(i, row['MAPE'] + 2, f"n={row['Count']}", 
+                         ha='center', va='bottom', fontsize=10, color='#2c3e50')
+            
+            # Add title and labels
+            plt.title('Mean Absolute Percentage Error by Industry Sector', fontsize=18)
+            plt.ylabel('MAPE (%)')
+            plt.xticks(rotation=45, ha='right')
+            plt.grid(axis='y', alpha=0.3)
+            
+            # Add horizontal line for overall MAPE
+            plt.axhline(y=overall_mape, linestyle='--', color='#e74c3c', 
+                      label=f'Overall MAPE: {overall_mape:.2f}%')
+            plt.legend()
+            
+            # Adjust layout and save
+            plt.tight_layout()
+            plt.savefig('approach4_mape_by_sector.png')
+            plt.show()
+            
+            # Create a pie chart showing distribution of companies by sector
+            plt.figure(figsize=(12, 12))
+            sector_counts = pred_df['Primary Industry Sector'].value_counts()
+            
+            # Keep only top sectors and group the rest as "Other"
+            top_n = 8
+            if len(sector_counts) > top_n:
+                other_count = sector_counts.iloc[top_n:].sum()
+                sector_counts = sector_counts.iloc[:top_n]
+                sector_counts['Other Sectors'] = other_count
+            
+            # Generate pleasant colors for the pie chart
+            colors = sns.color_palette('Paired', len(sector_counts))
+            
+            # Plot pie chart
+            plt.pie(sector_counts, labels=sector_counts.index, autopct='%1.1f%%', startangle=90, 
+                    colors=colors, shadow=False, wedgeprops={'edgecolor': 'w', 'linewidth': 1})
+            plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
+            plt.title('Distribution of Companies by Industry Sector', fontsize=18)
+            
+            # Save the figure
+            plt.savefig('approach4_sector_distribution.png')
+            plt.show()
+        
+        # 8.3 Error Profile with Median Error Marked
+        print("\n- Creating error distribution analysis...")
+        
+        # Calculate statistics for the error distribution
+        error_stats = {
+            'Mean Error': pred_df['Percentage Error'].mean(),
+            'Median Error': pred_df['Percentage Error'].median(),
+            'Min Error': pred_df['Percentage Error'].min(),
+            'Max Error': pred_df['Percentage Error'].max(),
+            'Std Dev': pred_df['Percentage Error'].std()
+        }
+        
+        print("\nError Statistics:")
+        for stat, value in error_stats.items():
+            print(f"{stat}: {value:.2f}%")
+        
+        # Create histogram of percentage errors
+        plt.figure(figsize=(14, 8))
+        
+        # Plot the histogram
+        sns.histplot(pred_df['Percentage Error'], bins=30, kde=True, color='#3498db')
+        
+        # Add vertical lines for mean and median
+        plt.axvline(x=error_stats['Mean Error'], color='#e74c3c', linestyle='--', 
+                    linewidth=2, label=f"Mean: {error_stats['Mean Error']:.2f}%")
+        plt.axvline(x=error_stats['Median Error'], color='#2ecc71', linestyle='-', 
+                    linewidth=2, label=f"Median: {error_stats['Median Error']:.2f}%")
+        
+        # Add title and labels
+        plt.title('Distribution of Percentage Errors', fontsize=18)
+        plt.xlabel('Percentage Error (%)')
+        plt.ylabel('Count')
+        plt.legend(fontsize=12)
+        
+        # Add grid
+        plt.grid(axis='y', alpha=0.3)
+        plt.tight_layout()
+        plt.savefig('approach4_error_distribution.png')
+        plt.show()
+        
+        # Create a box plot of percentage errors
+        plt.figure(figsize=(12, 6))
+        
+        # Create the box plot
+        sns.boxplot(x=pred_df['Percentage Error'], color='#3498db')
+        
+        # Add vertical line for median
+        plt.axvline(x=error_stats['Median Error'], color='#2ecc71', linestyle='-', 
+                    linewidth=2, label=f"Median: {error_stats['Median Error']:.2f}%")
+        
+        # Add title and labels
+        plt.title('Box Plot of Percentage Errors', fontsize=18)
+        plt.xlabel('Percentage Error (%)')
+        plt.legend(fontsize=12)
+        
+        # Adjust x-axis limits for better visibility
+        plt.xlim(0, min(300, error_stats['Max Error']*1.1))  # Cap at 300% or slightly above max error
+        
+        plt.grid(axis='y', alpha=0.3)
+        plt.tight_layout()
+        plt.savefig('approach4_error_boxplot.png')
+        plt.show()
+        
+        # 8.4 Data Filtering Analysis
+        print("\n- Analyzing data filtering effects on company counts...")
+        
+        # Get filtering statistics
+        original_companies = df['Companies'].nunique()
+        after_target_filter = valid_data['Companies'].nunique()
+        ipo_companies = ipo_data['Companies'].nunique()
+        predicted_companies = len(pred_df['Company'].unique())
+        
+        # Create a simple bar chart showing company counts at each stage
+        stages = ['Original Dataset', 'Valid Target', 'IPO Companies', 'Final Predictions']
+        counts = [original_companies, after_target_filter, ipo_companies, predicted_companies]
+        
+        plt.figure(figsize=(12, 8))
+        bars = plt.bar(stages, counts, color=['#3498db', '#2ecc71', '#e74c3c', '#f39c12'])
+        
+        # Add count labels on top of each bar
+        for bar in bars:
+            height = bar.get_height()
+            plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                    f'{int(height)}', ha='center', va='bottom', fontsize=12)
+        
+        # Add title and labels
+        plt.title('Number of Unique Companies at Each Stage of Data Processing', fontsize=18)
+        plt.ylabel('Number of Companies')
+        plt.grid(axis='y', alpha=0.3)
+        
+        # Calculate and display percentage retained at each stage
+        for i, (stage, count) in enumerate(zip(stages[1:], counts[1:])):
+            pct = (count / original_companies) * 100
+            plt.text(i+1, count/2, f'{pct:.1f}% of original', 
+                    ha='center', va='center', fontsize=10, color='white', fontweight='bold')
+        
+        plt.tight_layout()
+        plt.savefig('approach4_company_count_by_stage.png')
+        plt.show()
+        
+        # Save the prediction results for future reference
+        pred_df.to_csv('approach4_predictions.csv', index=False)
+        print("\nPrediction results saved to approach4_predictions.csv")
+        
+        # 9. Create a prediction function for new companies
+        print("\n9. Creating prediction function for new company data...")
