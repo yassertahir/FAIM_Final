@@ -168,14 +168,19 @@ def enhance_approach4():
     Enhanced implementation of Approach 4 which uses ALL non-IPO entries for training
     and tests on ALL IPO entries.
     """
-    print("Enhanced Approach 4: Using ALL non-IPO entries for training")
-
-    # Load the dataset
+    print("Enhanced Approach 4: Using ALL non-IPO entries for training")    # Load the dataset
     print("\nLoading and preparing dataset...")
     try:
         df = pd.read_csv('combined_ipo_with_urls.csv')
         print(f"Dataset shape: {df.shape}")
         print(f"Number of unique companies: {df['Companies'].nunique()}")
+        
+        # Display information about the VC Round column
+        if 'VC Round' in df.columns:
+            print("\nVC Round column analysis:")
+            print("Unique values:", df['VC Round'].unique())
+            print("\nValue counts:")
+            print(df['VC Round'].value_counts(dropna=False))
     except Exception as e:
         print(f"Error loading dataset: {e}")
         return
@@ -227,36 +232,75 @@ def enhance_approach4():
     print("- Adding funding round maturity indicators...")
     
     # Map VC Round to a numeric maturity level (higher = more mature)
+    # Updated to match the actual values in the dataset
     round_maturity_map = {
         'Angel': 1,
-        'Seed': 2,
-        'Series A': 3,
-        'Series B': 4,
-        'Series C': 5,
-        'Series D': 6,
-        'Series E': 7,
-        'Series F': 8,
-        'Series G': 9,
-        'Series H': 10,
-        'Series I': 11,
-        'Late Stage': 12,
-        'IPO': 13
+        '1st Round': 2,
+        '2nd Round': 3,
+        '3rd Round': 4,
+        '4th Round': 5,
+        '5th Round': 6,
+        '6th Round': 7,
+        '7th Round': 8,
+        '8th Round': 9,
+        '9th Round': 10,
+        '11th Round': 11
     }
 
+    # Helper function to flexibly match VC round values
+    def match_vc_rounds(series, patterns, case_sensitive=False):
+        """
+        Match VC round values against patterns, with option for case sensitivity.
+        Returns a boolean Series indicating matches.
+        """
+        if not case_sensitive:
+            # Convert all strings to lowercase for case-insensitive matching
+            series = series.str.lower() if hasattr(series, 'str') else series
+            patterns = [p.lower() if isinstance(p, str) else p for p in patterns]
+        
+        # First try exact matches
+        matches = series.isin(patterns)
+        
+        # If we found some matches, return
+        if matches.sum() > 0:
+            return matches
+        
+        # If no exact matches, try partial string matching
+        if hasattr(series, 'str'):
+            for pattern in patterns:
+                if isinstance(pattern, str):
+                    # Find partial matches
+                    partial_matches = series.str.contains(pattern, na=False)
+                    matches = matches | partial_matches
+        
+        return matches
+    
     # Create a new feature for funding round maturity
     if 'VC Round' in enhanced_data.columns:
         enhanced_data['Round_Maturity'] = enhanced_data['VC Round'].map(round_maturity_map).fillna(0)
         
-        # Create a binary indicator for early rounds (Angel or Seed)
-        enhanced_data['Is_Early_Round'] = enhanced_data['VC Round'].isin(['Angel', 'Seed']).astype(int)
+        # Define early and late rounds using more robust matching
+        early_rounds = ['Angel', '1st Round', '2nd Round', '3rd Round']
+        late_rounds = ['5th Round', '6th Round', '7th Round', '8th Round', '9th Round', '11th Round']
         
-        # Create a binary indicator for late stage rounds
-        enhanced_data['Is_Late_Round'] = enhanced_data['VC Round'].isin(['Late Stage', 'Series D', 
-                                                                        'Series E', 'Series F', 
-                                                                        'Series G', 'Series H', 
-                                                                        'Series I']).astype(int)
+        # Log what we're doing
+        print("\n- Identifying early rounds:", early_rounds)
+        print("- Identifying late rounds:", late_rounds)
+        
+        # Create binary indicators
+        enhanced_data['Is_Early_Round'] = match_vc_rounds(enhanced_data['VC Round'], early_rounds).astype(int)
+        enhanced_data['Is_Late_Round'] = match_vc_rounds(enhanced_data['VC Round'], late_rounds).astype(int)
+        
+        # Print how many rows were tagged
+        print(f"- Tagged {enhanced_data['Is_Early_Round'].sum()} rows as early rounds")
+        print(f"- Tagged {enhanced_data['Is_Late_Round'].sum()} rows as late rounds")
     else:
         print("Warning: 'VC Round' column not found. Skipping round maturity features.")
+        
+        # Add fallback default values to avoid downstream errors
+        enhanced_data['Round_Maturity'] = 0
+        enhanced_data['Is_Early_Round'] = 0
+        enhanced_data['Is_Late_Round'] = 0
 
     # 2.2 Add time-based features
     print("- Adding time-based features...")
