@@ -1396,7 +1396,9 @@ def enhance_approach4():
         # Get filtering statistics
         original_companies = df['Companies'].nunique()
         after_target_filter = valid_data['Companies'].nunique()
-        ipo_companies = ipo_data['Companies'].nunique()
+        # Use IPO mask to get the IPO companies count
+        ipo_mask = valid_data['Deal Type'] == "IPO"
+        ipo_companies = valid_data[ipo_mask]['Companies'].nunique()
         predicted_companies = len(pred_df['Company'].unique())
         
         # Create a simple bar chart showing company counts at each stage
